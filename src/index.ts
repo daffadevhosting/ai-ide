@@ -166,7 +166,7 @@ async function buildQuotaStatus(env: Env) {
         : null,
     resetAt, // unix ms UTC midnight (or exhausted-until)
     resetAtISO: new Date(resetAt).toISOString(),
-    tracking: env.USAGE ? "kv" : "memory",
+    tracking: env.USAGE ? "KV" : "memory",
   };
 }
 
@@ -830,7 +830,7 @@ export default {
       // Health / version — use this to verify the latest deploy is live
       if (path === "/api/version" && request.method === "GET") {
         return json({
-          name: "Lumen",
+          name: "Lumen AI-IDE",
           version: "2026.09.01-j",
           features: [
             "streaming-ai",

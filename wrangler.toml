@@ -15,7 +15,18 @@ binding = "ASSETS"
 # binding = "SESSIONS"
 # id = "your-kv-id"
 
-# Secrets (set via `wrangler secret put`):
-# GITHUB_TOKEN or GITHUB_APP_ID / GITHUB_PRIVATE_KEY / GITHUB_INSTALLATION_ID
-# ACCOUNT_ID (for REST AI fallback)
-# CLOUDFLARE_API_TOKEN
+[observability]
+enabled = true
+head_sampling_rate = 1
+redact_query_string = false
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+persist = true
+invocation_logs = true
+
+[observability.traces]
+enabled = false
+persist = true
+head_sampling_rate = 1

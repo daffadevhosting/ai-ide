@@ -2,6 +2,7 @@
 
 const state = {
   token: localStorage.getItem("gh_token") || "",
+  login: localStorage.getItem("gh_login") || "",
   theme: localStorage.getItem("theme") || "dark",
   repos: [],
   currentRepo: null,
@@ -131,7 +132,81 @@ function setStatus(msg, right) {
   if (right !== undefined) $("#status-right").textContent = right;
 }
 
-// ---------- Token ----------
+// ---------- Auth / Token ----------
+function updateAuthUI() {
+  const label = $("#github-login-label");
+  const btn = $("#btn-github-login");
+  if (state.token && state.login) {
+    if (label) label.textContent = state.login;
+    btn?.classList.add("connected");
+    btn && (btn.title = "Connected — click to disconnect");
+  } else if (state.token) {
+    if (label) label.textContent = "Connected";
+    btn?.classList.add("connected");
+    btn && (btn.title = "Connected — click to disconnect");
+  } else {
+    if (label) label.textContent = "Connect GitHub";
+    btn?.classList.remove("connected");
+    btn && (btn.title = "Connect GitHub account");
+  }
+}
+
+function connectGitHub() {
+  if (state.token) {
+    // Already connected → disconnect
+    ui.confirm("Disconnect GitHub account from Lumen?", "Disconnect").then((ok) => {
+      if (!ok) return;
+      state.token = "";
+      state.login = "";
+      localStorage.removeItem("gh_token");
+      localStorage.removeItem("gh_login");
+      state.repos = [];
+      renderRepos();
+      updateAuthUI();
+      setStatus("Disconnected from GitHub");
+    });
+    return;
+  }
+  // Start OAuth
+  window.location.href = "/api/auth/github";
+}
+
+function handleOAuthReturn() {
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get("gh_token");
+  const login = params.get("gh_login");
+  const authError = params.get("auth_error");
+
+  if (authError) {
+    ui.alert("GitHub login gagal: " + authError, "Auth error");
+    history.replaceState({}, "", "/");
+    return;
+  }
+
+  if (token) {
+    state.token = token;
+    state.login = login || "";
+    localStorage.setItem("gh_token", state.token);
+    if (state.login) localStorage.setItem("gh_login", state.login);
+    history.replaceState({}, "", "/");
+    updateAuthUI();
+    setStatus(state.login ? `Connected as ${state.login}` : "GitHub connected");
+    loadRepos();
+    // Refresh login name if missing
+    if (!state.login) {
+      api("/api/auth/me")
+        .then((user) => {
+          if (user?.login) {
+            state.login = user.login;
+            localStorage.setItem("gh_login", state.login);
+            updateAuthUI();
+          }
+        })
+        .catch(() => {});
+    }
+  }
+}
+
 function openTokenModal() {
   $("#token-input").value = state.token;
   $("#token-modal").classList.remove("hidden");
@@ -143,8 +218,24 @@ function closeTokenModal() {
 function saveToken() {
   state.token = $("#token-input").value.trim();
   localStorage.setItem("gh_token", state.token);
+  if (!state.token) {
+    state.login = "";
+    localStorage.removeItem("gh_login");
+  }
   closeTokenModal();
-  if (state.token) loadRepos();
+  updateAuthUI();
+  if (state.token) {
+    loadRepos();
+    api("/api/auth/me")
+      .then((user) => {
+        if (user?.login) {
+          state.login = user.login;
+          localStorage.setItem("gh_login", state.login);
+          updateAuthUI();
+        }
+      })
+      .catch(() => {});
+  }
   setStatus(state.token ? "Token saved" : "Token cleared");
 }
 
@@ -678,6 +769,8 @@ function switchView(name) {
 
 // ---------- Events ----------
 function bindEvents() {
+  $("#btn-github-login") && ($("#btn-github-login").onclick = connectGitHub);
+  $("#btn-github-login-welcome") && ($("#btn-github-login-welcome").onclick = connectGitHub);
   $("#btn-token").onclick = openTokenModal;
   $("#btn-cancel-token").onclick = closeTokenModal;
   $("#btn-save-token").onclick = saveToken;
@@ -789,11 +882,11 @@ function init() {
   setAIOpen(false);
   bindEvents();
   initEditor();
+  handleOAuthReturn();
+  updateAuthUI();
 
   if (state.token) loadRepos();
-  setStatus("Lumen ready · Set token to begin");
+  else setStatus("Lumen ready · Connect GitHub to begin");
 }
 
 init();
-
-

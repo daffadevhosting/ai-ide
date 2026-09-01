@@ -13,7 +13,7 @@ binding = "ASSETS"
 # Uncomment and set after creating KV for sessions / cache if needed
 # [[kv_namespaces]]
 # binding = "SESSIONS"
-# id = "your-kv-id"
+# id = "d78a33385b5f4556b362210572dad83f"
 
 [observability]
 enabled = true

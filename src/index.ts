@@ -23,6 +23,8 @@ const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-GitHub-Token",
 };
 
+// Code-optimized Moonshot model (Workers AI)
+// Note: do not pass custom temperature — Kimi K2.7 Code expects default (1.0)
 const CODE_MODEL = "@cf/moonshotai/kimi-k2.7-code";
 
 // Simple in-memory cache for installation tokens (per isolate)
@@ -179,11 +181,32 @@ async function handleAI(request: Request, env: Env): Promise<Response> {
     stream?: boolean;
   };
 
+  // Prompts tuned for a code-specialized model (Kimi K2.7 Code)
   const systemPrompts: Record<string, string> = {
-    review: `You are an expert code reviewer. Review the provided code carefully. Point out bugs, security issues, performance problems, style issues, and suggest improvements. Be concise but thorough. Use markdown.`,
-    fix: `You are an expert programmer. Fix the provided code based on the user's request or any obvious bugs. Return ONLY the complete fixed code inside a single markdown code block. No explanations outside the code block unless asked.`,
-    create: `You are an expert programmer. Create high-quality, production-ready code based on the user's request. Return the complete code inside a markdown code block. Include necessary imports and comments.`,
-    chat: `You are an expert AI coding assistant embedded in an IDE. Help the user with coding tasks, explanations, debugging, and architecture. Be helpful, precise, and concise. When writing code, use markdown code blocks with language tags.`,
+    review: `You are Lumen, an expert code reviewer inside an IDE.
+Review the code for correctness, bugs, security issues, performance, edge cases, and maintainability.
+Structure the response as:
+1) Summary
+2) Issues (severity: critical/major/minor)
+3) Suggested fixes (with code snippets in fenced blocks)
+Be precise and actionable. Use markdown.`,
+    fix: `You are Lumen, an expert programmer inside an IDE.
+Apply the user's requested changes or fix obvious bugs in the provided code.
+Rules:
+- Return the COMPLETE updated file/code in ONE markdown fenced code block with the correct language tag.
+- Preserve style and unrelated code unless a change is required.
+- Do not wrap the answer in extra commentary outside the code block unless the user asked for an explanation.`,
+    create: `You are Lumen, an expert programmer inside an IDE.
+Write production-quality code for the user's request.
+Rules:
+- Prefer clear structure, correct APIs, and minimal dependencies.
+- Include necessary imports and brief comments only where helpful.
+- Return the main deliverable in a markdown fenced code block with a language tag.
+- If multiple files are needed, use separate fenced blocks and label each with a filename comment on the first line.`,
+    chat: `You are Lumen, an expert AI coding assistant embedded in an IDE (Kimi K2.7 Code).
+Help with coding, debugging, refactors, explanations, and architecture.
+When you output code, use markdown fenced blocks with language tags.
+Be accurate, concise, and practical.`,
   };
 
   const system = systemPrompts[body.action] || systemPrompts.chat;
@@ -202,13 +225,17 @@ async function handleAI(request: Request, env: Env): Promise<Response> {
 
   const wantStream = body.stream !== false;
 
+  // Kimi K2.7 Code: messages + stream are supported; avoid non-default temperature
+  const inferenceInput: Record<string, unknown> = {
+    messages,
+    max_tokens: 8192,
+  };
+
   try {
     if (wantStream) {
       const stream = await env.AI.run(CODE_MODEL as any, {
-        messages,
+        ...inferenceInput,
         stream: true,
-        max_tokens: 4096,
-        temperature: 0.2,
       });
 
       return new Response(stream as ReadableStream, {
@@ -222,16 +249,21 @@ async function handleAI(request: Request, env: Env): Promise<Response> {
     }
 
     const result = await env.AI.run(CODE_MODEL as any, {
-      messages,
+      ...inferenceInput,
       stream: false,
-      max_tokens: 4096,
-      temperature: 0.2,
     });
 
-    const text =
-      typeof result === "object" && result !== null && "response" in result
-        ? (result as any).response
-        : String(result);
+    // Workers AI may return { response } and/or reasoning fields depending on model
+    let text = "";
+    if (typeof result === "string") {
+      text = result;
+    } else if (result && typeof result === "object") {
+      const r = result as Record<string, unknown>;
+      text = String(r.response ?? r.content ?? r.result ?? "");
+      if (!text && r.reasoning) text = String(r.reasoning);
+    } else {
+      text = String(result ?? "");
+    }
 
     return json({ result: text, model: CODE_MODEL });
   } catch (e: any) {
@@ -576,7 +608,7 @@ export default {
       if (path === "/api/version" && request.method === "GET") {
         return json({
           name: "Lumen",
-          version: "2026.09.01-e",
+          version: "2026.09.01-h",
           features: [
             "streaming-ai",
             "multi-tab",

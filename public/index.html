@@ -11,7 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <!-- Font Awesome 6 -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
-  <link rel="stylesheet" href="/css/styles.css?v=20260901f" />
+  <link rel="stylesheet" href="/css/styles.css?v=20260901j" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.0/min/vs/loader.min.js"></script>
 </head>
 <body>
@@ -41,6 +41,9 @@
         </button>
         <button id="btn-save" class="btn primary btn-label" title="Commit & Push">
           <i class="fa-solid fa-code-commit"></i> <span class="label">Commit</span>
+        </button>
+        <button id="btn-inline-toggle" class="btn ghost btn-label" title="Toggle inline AI suggestions">
+          <i class="fa-solid fa-lightbulb" id="inline-toggle-icon"></i> <span class="label" id="inline-toggle-label">Inline</span>
         </button>
         <button id="btn-ai-toggle" class="btn accent btn-label" title="Toggle AI Panel">
           <i class="fa-solid fa-wand-magic-sparkles"></i> <span class="label">AI</span>
@@ -184,6 +187,23 @@
     </div>
   </div>
 
-  <script src="/js/app.js?v=20260901g"></script>
+
+  <!-- Neuron quota lock overlay -->
+  <div id="quota-lock" class="quota-lock hidden" aria-live="polite">
+    <div class="quota-lock-card">
+      <div class="quota-lock-icon"><i class="fa-solid fa-microchip"></i></div>
+      <h2>Daily AI quota reached</h2>
+      <p class="quota-lock-msg">
+        Global Cloudflare neuron budget for Lumen is exhausted or near the soft limit.
+        AI features pause until the free allocation resets.
+      </p>
+      <div class="quota-countdown" id="quota-countdown">--:--:--</div>
+      <p class="quota-lock-sub">Resets at <span id="quota-reset-label">00:00 UTC</span></p>
+      <div class="quota-stats" id="quota-stats"></div>
+      <p class="quota-lock-hint">GitHub browse / edit tetap bisa · AI tertutup sementara</p>
+    </div>
+  </div>
+
+  <script src="/js/app.js?v=20260901j"></script>
 </body>
 </html>

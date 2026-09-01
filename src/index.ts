@@ -10,6 +10,9 @@ export interface Env {
   GITHUB_APP_ID?: string;
   GITHUB_PRIVATE_KEY?: string;
   GITHUB_INSTALLATION_ID?: string;
+  /** OAuth App / GitHub App client credentials for "Connect GitHub" */
+  GITHUB_CLIENT_ID?: string;
+  GITHUB_CLIENT_SECRET?: string;
   ACCOUNT_ID?: string;
   CLOUDFLARE_API_TOKEN?: string;
 }
@@ -405,6 +408,137 @@ async function handleCreateRepo(request: Request, env: Env): Promise<Response> {
   }
 }
 
+// ---------- GitHub OAuth (user login) ----------
+
+function randomState(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function handleGitHubOAuthStart(request: Request, env: Env): Response {
+  if (!env.GITHUB_CLIENT_ID) {
+    return error(
+      "GitHub OAuth belum dikonfigurasi. Set secret GITHUB_CLIENT_ID dan GITHUB_CLIENT_SECRET.",
+      503
+    );
+  }
+
+  const url = new URL(request.url);
+  const redirectUri = `${url.origin}/api/auth/github/callback`;
+  const state = randomState();
+
+  const authorize = new URL("https://github.com/login/oauth/authorize");
+  authorize.searchParams.set("client_id", env.GITHUB_CLIENT_ID);
+  authorize.searchParams.set("redirect_uri", redirectUri);
+  authorize.searchParams.set("scope", "repo read:user");
+  authorize.searchParams.set("state", state);
+
+  const headers = new Headers({ Location: authorize.toString() });
+  // Short-lived state cookie for CSRF check
+  headers.set(
+    "Set-Cookie",
+    `gh_oauth_state=${state}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=600`
+  );
+  return new Response(null, { status: 302, headers });
+}
+
+async function handleGitHubOAuthCallback(request: Request, env: Env): Promise<Response> {
+  if (!env.GITHUB_CLIENT_ID || !env.GITHUB_CLIENT_SECRET) {
+    return error("GitHub OAuth belum dikonfigurasi.", 503);
+  }
+
+  const url = new URL(request.url);
+  const code = url.searchParams.get("code");
+  const state = url.searchParams.get("state");
+  const err = url.searchParams.get("error");
+
+  if (err) {
+    return Response.redirect(`${url.origin}/?auth_error=${encodeURIComponent(err)}`, 302);
+  }
+  if (!code) return error("Missing OAuth code", 400);
+
+  // Validate state cookie
+  const cookieHeader = request.headers.get("Cookie") || "";
+  const stateMatch = cookieHeader.match(/(?:^|;\s*)gh_oauth_state=([^;]+)/);
+  const expectedState = stateMatch?.[1];
+  if (!expectedState || !state || expectedState !== state) {
+    return error("Invalid OAuth state. Coba login lagi.", 400);
+  }
+
+  const redirectUri = `${url.origin}/api/auth/github/callback`;
+
+  const tokenRes = await fetch("https://github.com/login/oauth/access_token", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      client_id: env.GITHUB_CLIENT_ID,
+      client_secret: env.GITHUB_CLIENT_SECRET,
+      code,
+      redirect_uri: redirectUri,
+    }),
+  });
+
+  const tokenData = (await tokenRes.json()) as {
+    access_token?: string;
+    error?: string;
+    error_description?: string;
+    scope?: string;
+  };
+
+  if (!tokenData.access_token) {
+    const msg = tokenData.error_description || tokenData.error || "Token exchange failed";
+    return Response.redirect(`${url.origin}/?auth_error=${encodeURIComponent(msg)}`, 302);
+  }
+
+  // Fetch username for UI
+  let login = "";
+  try {
+    const userRes = await fetch("https://api.github.com/user", {
+      headers: {
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${tokenData.access_token}`,
+        "User-Agent": "Lumen-IDE",
+      },
+    });
+    if (userRes.ok) {
+      const user = (await userRes.json()) as { login?: string };
+      login = user.login || "";
+    }
+  } catch {
+    /* ignore */
+  }
+
+  const redirect = new URL(url.origin);
+  redirect.searchParams.set("gh_token", tokenData.access_token);
+  if (login) redirect.searchParams.set("gh_login", login);
+
+  const headers = new Headers({ Location: redirect.toString() });
+  headers.set(
+    "Set-Cookie",
+    "gh_oauth_state=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0"
+  );
+  return new Response(null, { status: 302, headers });
+}
+
+async function handleAuthMe(request: Request, env: Env): Promise<Response> {
+  const token = await getGitHubToken(env, request);
+  if (!token) return error("Not authenticated", 401);
+
+  try {
+    const res = await githubFetch("/user", token);
+    const user = await res.json();
+    return json(user);
+  } catch (e: any) {
+    return error(e.message, 500);
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
     if (request.method === "OPTIONS") {
@@ -438,8 +572,54 @@ export default {
         return handleFile(request, env, fileMatch[1], fileMatch[2], fileMatch[3]);
       }
 
+      // Health / version — use this to verify the latest deploy is live
+      if (path === "/api/version" && request.method === "GET") {
+        return json({
+          name: "Lumen",
+          version: "2026.09.01-e",
+          features: [
+            "streaming-ai",
+            "multi-tab",
+            "github-app-jwt",
+            "github-oauth",
+            "ui-dialogs",
+            "collapsible-panels",
+          ],
+          oauthConfigured: Boolean(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET),
+        });
+      }
+
+      // ----- GitHub OAuth (Connect account) -----
+      if (path === "/api/auth/github" && request.method === "GET") {
+        return handleGitHubOAuthStart(request, env);
+      }
+      if (path === "/api/auth/github/callback" && request.method === "GET") {
+        return handleGitHubOAuthCallback(request, env);
+      }
+      if (path === "/api/auth/me" && request.method === "GET") {
+        return handleAuthMe(request, env);
+      }
+      if (path === "/api/auth/status" && request.method === "GET") {
+        return json({
+          oauthConfigured: Boolean(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET),
+          loginUrl: "/api/auth/github",
+        });
+      }
+
       if (env.ASSETS) {
-        return env.ASSETS.fetch(request);
+        const assetRes = await env.ASSETS.fetch(request);
+        // Prevent sticky HTML cache after deploys
+        if (path === "/" || path.endsWith(".html")) {
+          const headers = new Headers(assetRes.headers);
+          headers.set("Cache-Control", "no-cache, no-store, must-revalidate");
+          headers.set("Pragma", "no-cache");
+          return new Response(assetRes.body, {
+            status: assetRes.status,
+            statusText: assetRes.statusText,
+            headers,
+          });
+        }
+        return assetRes;
       }
 
       return error("Not found", 404);

@@ -9,40 +9,17 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/styles.css?v=20260901c" />
+  <!-- Font Awesome 6 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <link rel="stylesheet" href="/css/styles.css?v=20260901d" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.0/min/vs/loader.min.js"></script>
-  <!-- Lucide UMD -->
-  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
-<script>
-  // Tunggu hingga DOM siap dan semua elemen dirender
-  document.addEventListener('DOMContentLoaded', function() {
-    // Tunggu sedikit untuk memastikan semua elemen ada
-    setTimeout(function() {
-      if (typeof lucide !== 'undefined' && lucide.createIcons) {
-        lucide.createIcons();
-      } else {
-        console.warn('Lucide tidak ditemukan, coba muat ulang');
-      }
-    }, 100);
-  });
-
-  function refreshIcons() {
-    if (typeof lucide !== 'undefined' && lucide.createIcons) {
-      lucide.createIcons();
-    }
-  }
-
-  // Expose ke global untuk dipanggil dari app.js
-  window.refreshIcons = refreshIcons;
-</script>
 </head>
 <body>
   <div id="app">
-    <!-- Top bar -->
     <header class="topbar">
       <div class="topbar-left">
         <button id="btn-sidebar" class="icon-btn" title="Toggle sidebar">
-          <i data-lucide="menu"></i>
+          <i class="fa-solid fa-bars"></i>
         </button>
         <div class="brand">
           <img src="/assets/logo.svg" alt="Lumen" class="brand-logo" width="22" height="22" />
@@ -54,48 +31,46 @@
       </div>
       <div class="topbar-actions">
         <button id="btn-theme" class="icon-btn" title="Toggle theme">
-          <i data-lucide="sun" id="theme-icon"></i>
+          <i class="fa-solid fa-sun" id="theme-icon"></i>
         </button>
         <button id="btn-token" class="btn ghost btn-label" title="Set GitHub Token">
-          <i data-lucide="key-round"></i> <span class="label">Token</span>
+          <i class="fa-solid fa-key"></i> <span class="label">Token</span>
         </button>
         <button id="btn-save" class="btn primary btn-label" title="Commit & Push">
-          <i data-lucide="git-commit"></i> <span class="label">Commit</span>
+          <i class="fa-solid fa-code-commit"></i> <span class="label">Commit</span>
         </button>
         <button id="btn-ai-toggle" class="btn accent btn-label" title="Toggle AI Panel">
-          <i data-lucide="sparkles"></i> <span class="label">AI</span>
+          <i class="fa-solid fa-wand-magic-sparkles"></i> <span class="label">AI</span>
         </button>
       </div>
     </header>
 
     <div class="main">
-      <!-- Backdrop for mobile drawers -->
       <div id="backdrop" class="backdrop"></div>
 
-      <!-- Sidebar -->
       <aside id="sidebar" class="sidebar">
         <div class="sidebar-header">
           <div class="tabs">
             <button class="tab active" data-view="repos">
-              <i data-lucide="folder-git-2"></i> Repos
+              <i class="fa-solid fa-folder-tree"></i> Repos
             </button>
             <button class="tab" data-view="files">
-              <i data-lucide="files"></i> Files
+              <i class="fa-solid fa-file-lines"></i> Files
             </button>
           </div>
           <div class="sidebar-header-actions">
             <button id="btn-refresh" class="icon-btn" title="Refresh">
-              <i data-lucide="refresh-cw"></i>
+              <i class="fa-solid fa-rotate"></i>
             </button>
             <button id="btn-sidebar-close" class="icon-btn sidebar-close-btn" title="Close sidebar">
-              <i data-lucide="x"></i>
+              <i class="fa-solid fa-xmark"></i>
             </button>
           </div>
         </div>
         <div id="sidebar-content" class="sidebar-content">
           <div id="view-repos" class="view active">
             <div class="empty-state">
-              <i data-lucide="key-round" style="width:32px;height:32px;opacity:.4;margin-bottom:8px"></i>
+              <i class="fa-solid fa-key" style="font-size:28px;opacity:.4;margin-bottom:8px"></i>
               <div>Set GitHub token to load repos</div>
             </div>
           </div>
@@ -106,7 +81,6 @@
         </div>
       </aside>
 
-      <!-- Editor area -->
       <section class="editor-area">
         <div id="tab-bar" class="tab-bar">
           <div id="tabs" class="tabs-list"></div>
@@ -125,19 +99,30 @@
         </div>
       </section>
 
-      <!-- AI Panel -->
       <aside id="ai-panel" class="ai-panel">
         <div class="ai-header">
-          <span><i data-lucide="sparkles"></i> AI Assistant</span>
+          <span><i class="fa-solid fa-wand-magic-sparkles"></i> AI Assistant</span>
           <div class="ai-actions">
-            <select id="ai-action">
-              <option value="chat">Chat</option>
-              <option value="review">Review Code</option>
-              <option value="fix">Fix / Edit</option>
-              <option value="create">Create Code</option>
-            </select>
+            <div class="custom-select" id="ai-action-wrap">
+              <button type="button" class="custom-select-trigger" id="ai-action-trigger">
+                <span id="ai-action-label">Chat</span>
+                <i class="fa-solid fa-chevron-down"></i>
+              </button>
+              <ul class="custom-select-menu hidden" id="ai-action-menu">
+                <li data-value="chat" class="active">Chat</li>
+                <li data-value="review">Review Code</li>
+                <li data-value="fix">Fix / Edit</li>
+                <li data-value="create">Create Code</li>
+              </ul>
+              <select id="ai-action" class="sr-only" aria-hidden="true">
+                <option value="chat">Chat</option>
+                <option value="review">Review Code</option>
+                <option value="fix">Fix / Edit</option>
+                <option value="create">Create Code</option>
+              </select>
+            </div>
             <button id="btn-close-ai" class="icon-btn" title="Close">
-              <i data-lucide="x"></i>
+              <i class="fa-solid fa-xmark"></i>
             </button>
           </div>
         </div>
@@ -146,17 +131,16 @@
           <textarea id="ai-input" placeholder="Ask AI to review, fix, or create code... (Ctrl/⌘+Enter)" rows="3"></textarea>
           <div class="ai-input-actions">
             <button id="btn-use-selection" class="btn ghost sm">
-              <i data-lucide="text-cursor-input"></i> Selection
+              <i class="fa-solid fa-i-cursor"></i> Selection
             </button>
             <button id="btn-send-ai" class="btn accent sm">
-              <i data-lucide="send"></i> Send
+              <i class="fa-solid fa-paper-plane"></i> Send
             </button>
           </div>
         </div>
       </aside>
     </div>
 
-    <!-- Status bar -->
     <footer class="statusbar">
       <span id="status-left">Ready</span>
       <span id="status-right">Lumen · Workers AI</span>
@@ -166,11 +150,10 @@
   <!-- Token Modal -->
   <div id="token-modal" class="modal hidden">
     <div class="modal-content">
-      <h2><i data-lucide="key-round"></i> GitHub Token</h2>
+      <h2><i class="fa-solid fa-key"></i> GitHub Token</h2>
       <p>
         Paste a Personal Access Token with <code>repo</code> scope.
         Token is stored only in your browser (localStorage).
-        For production, prefer a GitHub App (set secrets on the Worker).
       </p>
       <input type="password" id="token-input" placeholder="ghp_xxxxxxxxxxxx" autocomplete="off" />
       <div class="modal-actions">
@@ -180,9 +163,10 @@
     </div>
   </div>
 
-  <!-- Unified dialog (alert / confirm / prompt) -->
+  <!-- Custom alert / confirm / prompt -->
   <div id="ui-dialog" class="modal hidden" role="dialog" aria-modal="true">
     <div class="modal-content ui-dialog-content">
+      <div class="ui-dialog-icon" id="ui-dialog-icon"></div>
       <h2 id="ui-dialog-title"></h2>
       <p id="ui-dialog-message"></p>
       <input type="text" id="ui-dialog-input" class="hidden" autocomplete="off" />
@@ -193,7 +177,6 @@
     </div>
   </div>
 
-  <script src="/js/app.js?v=20260901c"></script>
+  <script src="/js/app.js?v=20260901d"></script>
 </body>
 </html>
-

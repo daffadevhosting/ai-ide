@@ -31,7 +31,7 @@ const CORS_HEADERS: Record<string, string> = {
 
 // Heavy model for panel AI (review / fix / create / chat)
 // Qwen2.5-Coder-32B: 32k context, LoRA yes. Pricing ~$0.66/M in, $1/M out
-const CODE_MODEL = "@cf/openai/gpt-oss-20b";
+const CODE_MODEL = "@cf/qwen/qwen2.5-coder-32b-instruct";
 // Light model for inline ghost-text (neuron-friendly)
 const COMPLETE_MODEL = "@cf/mistral/mistral-7b-instruct-v0.2-lora";
 

@@ -10,10 +10,9 @@ binding = "AI"
 directory = "./public"
 binding = "ASSETS"
 
-# Uncomment and set after creating KV for sessions / cache if needed
-# [[kv_namespaces]]
-# binding = "SESSIONS"
-# id = "d78a33385b5f4556b362210572dad83f"
+[[kv_namespaces]]
+binding = "SESSIONS"
+id = "d78a33385b5f4556b362210572dad83f"
 
 [observability]
 enabled = true

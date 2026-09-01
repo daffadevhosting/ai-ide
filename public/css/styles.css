@@ -71,10 +71,11 @@ html, body {
   flex-shrink: 0;
 }
 
-.brand-icon {
-  width: 20px;
-  height: 20px;
-  color: var(--accent);
+.brand-logo {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  display: block;
 }
 
 .topbar {
@@ -97,6 +98,7 @@ html, body {
   font-size: 14px;
   color: var(--text);
   min-width: 100px;
+  letter-spacing: -0.02em;
 }
 
 .topbar-center {
@@ -373,13 +375,29 @@ html, body {
   text-align: center;
   color: var(--text-muted);
 }
+.welcome-logo {
+  width: 56px;
+  height: 56px;
+  margin-bottom: 16px;
+  filter: drop-shadow(0 4px 12px rgba(108, 140, 255, 0.25));
+}
 .welcome h1 {
-  font-size: 28px;
+  font-size: 32px;
   font-weight: 600;
   color: var(--text);
-  margin-bottom: 8px;
+  margin-bottom: 6px;
+  letter-spacing: -0.03em;
 }
-.welcome p { margin-bottom: 28px; font-size: 14px; }
+.welcome .tagline {
+  font-size: 15px;
+  color: var(--accent);
+  font-weight: 500;
+  margin-bottom: 6px;
+}
+.welcome .sub {
+  margin-bottom: 28px;
+  font-size: 13px;
+}
 .welcome ol {
   text-align: left;
   max-width: 400px;

@@ -1,4 +1,4 @@
-/* AI IDE Frontend — multi-tab, streaming AI, theme, Lucide */
+/* Lumen — AI coding workspace (multi-tab, streaming AI, theme, Lucide) */
 
 const state = {
   token: localStorage.getItem("gh_token") || "",
@@ -606,7 +606,7 @@ function init() {
   initEditor();
   refreshIcons();
   if (state.token) loadRepos();
-  setStatus("Ready · Set token to begin");
+  setStatus("Lumen ready · Set token to begin");
 }
 
 init();

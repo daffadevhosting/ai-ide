@@ -13,6 +13,9 @@ const state = {
   sidebarOpen: true,  // desktop default open; mobile starts closed via CSS
   aiOpen: false,
   streaming: false,
+  // Inline ghost-text (default on; persisted)
+  inlineSuggest: localStorage.getItem("inline_suggest") !== "0",
+  inlineProviderDisposable: null,
 };
 
 function isMobile() {
@@ -540,6 +543,146 @@ async function openFile(path, sha) {
   }
 }
 
+function updateInlineToggleUI() {
+  const label = $("#inline-toggle-label");
+  const btn = $("#btn-inline-toggle");
+  const icon = $("#inline-toggle-icon");
+  if (label) label.textContent = state.inlineSuggest ? "Inline On" : "Inline Off";
+  if (btn) {
+    btn.classList.toggle("accent", state.inlineSuggest);
+    btn.classList.toggle("ghost", !state.inlineSuggest);
+    btn.title = state.inlineSuggest
+      ? "Inline AI suggestions on (click to disable)"
+      : "Inline AI suggestions off (click to enable)";
+  }
+  if (icon) {
+    icon.className = state.inlineSuggest
+      ? "fa-solid fa-lightbulb"
+      : "fa-regular fa-lightbulb";
+  }
+  const right = state.inlineSuggest ? "Lumen · Inline AI" : "Lumen · Workers AI";
+  $("#status-right") && ($("#status-right").textContent = right);
+}
+
+function toggleInlineSuggest() {
+  state.inlineSuggest = !state.inlineSuggest;
+  localStorage.setItem("inline_suggest", state.inlineSuggest ? "1" : "0");
+  updateInlineToggleUI();
+  setStatus(state.inlineSuggest ? "Inline AI suggestions enabled" : "Inline AI suggestions disabled");
+}
+
+function registerInlineCompletions() {
+  if (!window.monaco || state.inlineProviderDisposable) return;
+
+  let debounceTimer = null;
+  let lastAbort = null;
+
+  state.inlineProviderDisposable = monaco.languages.registerInlineCompletionsProvider(
+    { pattern: "**" },
+    {
+      provideInlineCompletions: (model, position, _context, token) => {
+        if (!state.inlineSuggest) {
+          return { items: [] };
+        }
+
+        return new Promise((resolve) => {
+          if (debounceTimer) clearTimeout(debounceTimer);
+          if (lastAbort) {
+            try { lastAbort.abort(); } catch {}
+          }
+
+          debounceTimer = setTimeout(async () => {
+            if (token.isCancellationRequested) {
+              resolve({ items: [] });
+              return;
+            }
+
+            try {
+              const offset = model.getOffsetAt(position);
+              const full = model.getValue();
+              // Limit context for cost
+              const prefix = full.slice(Math.max(0, offset - 3500), offset);
+              const suffix = full.slice(offset, offset + 1200);
+              // Skip empty / tiny prefix
+              if (prefix.trim().length < 8) {
+                resolve({ items: [] });
+                return;
+              }
+
+              const controller = new AbortController();
+              lastAbort = controller;
+
+              const headers = { "Content-Type": "application/json" };
+              if (state.token) headers["X-GitHub-Token"] = state.token;
+
+              const res = await fetch("/api/ai", {
+                method: "POST",
+                headers,
+                signal: controller.signal,
+                body: JSON.stringify({
+                  action: "complete",
+                  stream: false,
+                  language: model.getLanguageId(),
+                  filename: getActiveTab()?.path || "file",
+                  prefix,
+                  suffix,
+                }),
+              });
+
+              if (token.isCancellationRequested) {
+                resolve({ items: [] });
+                return;
+              }
+
+              const data = await res.json().catch(() => ({}));
+              if (!res.ok) {
+                if (data?.code === "NEURON_QUOTA" || data?.quota?.blocked) {
+                  handleQuotaError(data);
+                }
+                resolve({ items: [] });
+                return;
+              }
+
+              let insertText = (data.result || "").replace(/\r\n/g, "\n");
+              // Don't suggest if empty or too long
+              if (!insertText || insertText.length > 2000) {
+                resolve({ items: [] });
+                return;
+              }
+              // Avoid repeating the last chars of prefix
+              const tail = prefix.slice(-20);
+              if (tail && insertText.startsWith(tail)) {
+                insertText = insertText.slice(tail.length);
+              }
+              if (!insertText) {
+                resolve({ items: [] });
+                return;
+              }
+
+              resolve({
+                items: [
+                  {
+                    insertText,
+                    range: new monaco.Range(
+                      position.lineNumber,
+                      position.column,
+                      position.lineNumber,
+                      position.column
+                    ),
+                  },
+                ],
+              });
+            } catch {
+              resolve({ items: [] });
+            }
+          }, 650);
+        });
+      },
+      freeInlineCompletions: () => {},
+    }
+  );
+}
+
 function initEditor() {
   require.config({
     paths: { vs: "https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.0/min/vs" },
@@ -559,6 +702,9 @@ function initEditor() {
       renderLineHighlight: "line",
       cursorBlinking: "smooth",
       smoothScrolling: true,
+      // Prefer inline completions UI
+      inlineSuggest: { enabled: true },
+      quickSuggestions: { other: true, comments: false, strings: false },
     });
 
     state.editor.onDidChangeModelContent(() => {
@@ -568,6 +714,9 @@ function initEditor() {
         renderTabs();
       }
     });
+
+    registerInlineCompletions();
+    updateInlineToggleUI();
   });
 }
 
@@ -658,6 +807,11 @@ function finishMessage(div, fullText) {
 
 async function sendAI() {
   if (state.streaming) return;
+  if (lastQuota?.blocked) {
+    setQuotaLock(true, lastQuota);
+    setStatus("AI paused · daily neuron quota");
+    return;
+  }
   const input = $("#ai-input");
   const prompt = input.value.trim();
   if (!prompt) return;
@@ -702,6 +856,9 @@ async function sendAI() {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
+      if (handleQuotaError(err)) {
+        throw new Error(err.error || "Daily AI quota reached");
+      }
       throw new Error(err.error || res.statusText);
     }
 
@@ -807,6 +964,7 @@ function bindEvents() {
   $("#btn-cancel-token").onclick = closeTokenModal;
   $("#btn-save-token").onclick = saveToken;
   $("#btn-save").onclick = commitFile;
+  $("#btn-inline-toggle") && ($("#btn-inline-toggle").onclick = toggleInlineSuggest);
   $("#btn-ai-toggle").onclick = toggleAI;
   $("#btn-close-ai").onclick = () => setAIOpen(false);
   $("#btn-send-ai").onclick = sendAI;
@@ -902,6 +1060,100 @@ function bindEvents() {
 }
 
 // ---------- Init ----------
+
+// ---------- Neuron quota gate ----------
+let quotaTimer = null;
+let quotaCountdownTimer = null;
+let lastQuota = null;
+
+function formatHMS(ms) {
+  if (ms < 0) ms = 0;
+  const s = Math.floor(ms / 1000);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  return [h, m, sec].map((n) => String(n).padStart(2, "0")).join(":");
+}
+
+function setQuotaLock(show, quota) {
+  const el = $("#quota-lock");
+  if (!el) return;
+  el.classList.toggle("hidden", !show);
+  if (!show) return;
+
+  lastQuota = quota || lastQuota;
+  const resetAt = lastQuota?.resetAt || 0;
+  const label = $("#quota-reset-label");
+  if (label && resetAt) {
+    label.textContent = new Date(resetAt).toISOString().replace("T", " ").replace(".000Z", " UTC");
+  }
+  const stats = $("#quota-stats");
+  if (stats && lastQuota) {
+    stats.textContent = `Used ~${lastQuota.used} / ${lastQuota.limit} neurons (soft ${lastQuota.softLimit}) · ${lastQuota.tracking}`;
+  }
+
+  if (quotaCountdownTimer) clearInterval(quotaCountdownTimer);
+  const tick = () => {
+    const left = (lastQuota?.resetAt || 0) - Date.now();
+    const cd = $("#quota-countdown");
+    if (cd) cd.textContent = formatHMS(left);
+    if (left <= 0) {
+      // try unlock after reset
+      checkQuota(true);
+    }
+  };
+  tick();
+  quotaCountdownTimer = setInterval(tick, 1000);
+
+  // Pause inline AI while locked
+  if (state.inlineSuggest) {
+    state._inlineWasOn = true;
+    state.inlineSuggest = false;
+    updateInlineToggleUI();
+  }
+}
+
+async function checkQuota(forceUnlockAttempt) {
+  try {
+    const res = await fetch("/api/quota");
+    if (!res.ok) return;
+    const q = await res.json();
+    lastQuota = q;
+    if (q.blocked) {
+      setQuotaLock(true, q);
+      setStatus("AI paused · daily neuron quota");
+    } else {
+      setQuotaLock(false, q);
+      if (forceUnlockAttempt && state._inlineWasOn) {
+        state.inlineSuggest = true;
+        state._inlineWasOn = false;
+        updateInlineToggleUI();
+      }
+      // Show soft usage in status when high
+      if (q.used >= q.softLimit * 0.85) {
+        setStatus(`Neurons ~${q.used}/${q.limit} · resets ${new Date(q.resetAt).toISOString().slice(11, 16)} UTC`);
+      }
+    }
+  } catch {
+    /* ignore network */
+  }
+}
+
+function handleQuotaError(payload) {
+  if (payload?.code === "NEURON_QUOTA" || payload?.quota?.blocked) {
+    setQuotaLock(true, payload.quota || payload);
+    return true;
+  }
+  return false;
+}
+
+function startQuotaPolling() {
+  checkQuota();
+  if (quotaTimer) clearInterval(quotaTimer);
+  quotaTimer = setInterval(() => checkQuota(), 60000); // every minute
+}
+
+
 function init() {
   applyTheme(state.theme);
   // Mobile starts with sidebar closed
@@ -916,6 +1168,8 @@ function init() {
   initEditor();
   handleOAuthReturn();
   updateAuthUI();
+  updateInlineToggleUI();
+  startQuotaPolling();
 
   if (state.token) loadRepos();
   else setStatus("Lumen ready · Connect GitHub to begin");

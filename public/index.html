@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>AI IDE · Cloudflare</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/styles.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.0/min/vs/loader.min.js"></script>
+  <script src="https://unpkg.com/lucide@0.468.0"></script>
+</head>
+<body>
+  <div id="app">
+    <!-- Top bar -->
+    <header class="topbar">
+      <div class="brand">
+        <i data-lucide="boxes" class="brand-icon"></i>
+        <span>AI IDE</span>
+      </div>
+      <div class="topbar-center">
+        <span id="current-file" class="current-file">No file open</span>
+      </div>
+      <div class="topbar-actions">
+        <button id="btn-theme" class="icon-btn" title="Toggle theme">
+          <i data-lucide="sun" id="theme-icon"></i>
+        </button>
+        <button id="btn-token" class="btn ghost" title="Set GitHub Token">
+          <i data-lucide="key-round"></i> Token
+        </button>
+        <button id="btn-save" class="btn primary" title="Commit & Push">
+          <i data-lucide="git-commit-horizontal"></i> Commit
+        </button>
+        <button id="btn-ai-toggle" class="btn accent" title="Toggle AI Panel">
+          <i data-lucide="sparkles"></i> AI
+        </button>
+      </div>
+    </header>
+
+    <div class="main">
+      <!-- Sidebar -->
+      <aside id="sidebar" class="sidebar">
+        <div class="sidebar-header">
+          <div class="tabs">
+            <button class="tab active" data-view="repos">
+              <i data-lucide="folder-git-2"></i> Repos
+            </button>
+            <button class="tab" data-view="files">
+              <i data-lucide="files"></i> Files
+            </button>
+          </div>
+          <button id="btn-refresh" class="icon-btn" title="Refresh">
+            <i data-lucide="refresh-cw"></i>
+          </button>
+        </div>
+        <div id="sidebar-content" class="sidebar-content">
+          <div id="view-repos" class="view active">
+            <div class="empty-state">
+              <i data-lucide="key-round" style="width:32px;height:32px;opacity:.4;margin-bottom:8px"></i>
+              <div>Set GitHub token to load repos</div>
+            </div>
+          </div>
+          <div id="view-files" class="view">
+            <div class="breadcrumb" id="breadcrumb"></div>
+            <div id="file-tree" class="file-tree"></div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Editor area -->
+      <section class="editor-area">
+        <!-- Multi-tab bar -->
+        <div id="tab-bar" class="tab-bar">
+          <div id="tabs" class="tabs-list"></div>
+        </div>
+        <div id="editor-container"></div>
+        <div id="welcome" class="welcome">
+          <i data-lucide="sparkles" style="width:48px;height:48px;color:var(--accent);margin-bottom:12px"></i>
+          <h1>AI IDE</h1>
+          <p>Cloudflare Workers AI · GitHub powered</p>
+          <ol>
+            <li>Set your <strong>GitHub Personal Access Token</strong> (repo scope) or configure GitHub App</li>
+            <li>Select a repository from the sidebar</li>
+            <li>Open files — they appear as tabs. Use <strong>AI</strong> to review, fix or create code</li>
+          </ol>
+        </div>
+      </section>
+
+      <!-- AI Panel -->
+      <aside id="ai-panel" class="ai-panel">
+        <div class="ai-header">
+          <span><i data-lucide="sparkles"></i> AI Assistant</span>
+          <div class="ai-actions">
+            <select id="ai-action">
+              <option value="chat">Chat</option>
+              <option value="review">Review Code</option>
+              <option value="fix">Fix / Edit</option>
+              <option value="create">Create Code</option>
+            </select>
+            <button id="btn-close-ai" class="icon-btn" title="Close">
+              <i data-lucide="x"></i>
+            </button>
+          </div>
+        </div>
+        <div id="ai-messages" class="ai-messages"></div>
+        <div class="ai-input-area">
+          <textarea id="ai-input" placeholder="Ask AI to review, fix, or create code... (Ctrl/⌘+Enter)" rows="3"></textarea>
+          <div class="ai-input-actions">
+            <button id="btn-use-selection" class="btn ghost sm">
+              <i data-lucide="text-select"></i> Selection
+            </button>
+            <button id="btn-send-ai" class="btn accent sm">
+              <i data-lucide="send"></i> Send
+            </button>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <!-- Status bar -->
+    <footer class="statusbar">
+      <span id="status-left">Ready</span>
+      <span id="status-right">Workers AI · Streaming</span>
+    </footer>
+  </div>
+
+  <!-- Token Modal -->
+  <div id="token-modal" class="modal hidden">
+    <div class="modal-content">
+      <h2><i data-lucide="key-round"></i> GitHub Token</h2>
+      <p>
+        Paste a Personal Access Token with <code>repo</code> scope.
+        Token is stored only in your browser (localStorage).
+        For production, prefer a GitHub App (set secrets on the Worker).
+      </p>
+      <input type="password" id="token-input" placeholder="ghp_xxxxxxxxxxxx" autocomplete="off" />
+      <div class="modal-actions">
+        <button id="btn-cancel-token" class="btn ghost">Cancel</button>
+        <button id="btn-save-token" class="btn primary">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/app.js"></script>
+</body>
+</html>

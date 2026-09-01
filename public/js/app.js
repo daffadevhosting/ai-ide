@@ -1088,8 +1088,20 @@ async function sendAI() {
         if (trimmed.startsWith("data: ")) {
           try {
             const json = JSON.parse(trimmed.slice(6));
-            const chunk = json.response || json.delta || "";
-            if (chunk) {
+            // Workers AI native: { response: "..." } — sometimes response is a NUMBER
+            // (e.g. 0). OpenAI-compatible: { choices: [{ delta: { content: "..." } }] }
+            // NEVER use `||` here — numeric 0 is falsy and would be dropped
+            // (margin: 0 → margin: px, rgba(0,0,0,.2) → rgba(,,,.2), 100% → 1%).
+            let raw = "";
+            if (json.response !== undefined && json.response !== null) {
+              raw = json.response;
+            } else if (json.delta !== undefined && json.delta !== null) {
+              raw = typeof json.delta === "object" ? json.delta.content ?? "" : json.delta;
+            } else if (json.choices?.[0]?.delta?.content != null) {
+              raw = json.choices[0].delta.content;
+            }
+            const chunk = String(raw);
+            if (chunk.length > 0) {
               fullText += chunk;
               assistantDiv.innerHTML = formatMsgHtml(fullText);
               $("#ai-messages").scrollTop = $("#ai-messages").scrollHeight;

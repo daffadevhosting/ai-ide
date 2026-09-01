@@ -14,6 +14,10 @@ binding = "ASSETS"
 binding = "SESSIONS"
 id = "d78a33385b5f4556b362210572dad83f"
 
+[[kv_namespaces]]
+binding = "USAGE"
+id = "89fa417d14584138807202f3748e041a"
+
 [observability]
 enabled = true
 head_sampling_rate = 1

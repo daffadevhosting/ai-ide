@@ -333,6 +333,8 @@ async function handleCommit(request: Request, env: Env): Promise<Response> {
     message: string;
     branch?: string;
     sha?: string;
+    /** Optional author override (defaults to Lumen) */
+    author?: { name?: string; email?: string };
   };
 
   if (!body.owner || !body.repo || !body.path || body.content === undefined || !body.message) {
@@ -341,12 +343,23 @@ async function handleCommit(request: Request, env: Env): Promise<Response> {
 
   const branch = body.branch || "main";
 
+  // Always attribute commits to Lumen as committer
+  const lumenIdentity = {
+    name: "Lumen",
+    email: "lumen@users.noreply.github.com",
+  };
+
   try {
     const contentBase64 = btoa(unescape(encodeURIComponent(body.content)));
     const payload: any = {
       message: body.message,
       content: contentBase64,
       branch,
+      committer: lumenIdentity,
+      author: {
+        name: body.author?.name || lumenIdentity.name,
+        email: body.author?.email || lumenIdentity.email,
+      },
     };
     if (body.sha) payload.sha = body.sha;
 

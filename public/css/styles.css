@@ -1446,3 +1446,69 @@ select option {
 .ui-dialog-content #ui-dialog-input { text-align: left; }
 
 ::-webkit-scrollbar-thumb:hover { background: #b0b8c4; }
+
+
+/* Neuron quota lock */
+.quota-lock {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,.72);
+  backdrop-filter: blur(8px);
+  padding: 24px;
+}
+.quota-lock.hidden { display: none !important; }
+.quota-lock-card {
+  max-width: 420px;
+  width: 100%;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 28px 24px;
+  text-align: center;
+  box-shadow: var(--shadow);
+}
+.quota-lock-icon {
+  font-size: 36px;
+  color: var(--accent);
+  margin-bottom: 12px;
+}
+.quota-lock-card h2 {
+  margin: 0 0 10px;
+  font-size: 20px;
+  font-weight: 600;
+}
+.quota-lock-msg {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0 0 20px;
+}
+.quota-countdown {
+  font-family: var(--mono, 'JetBrains Mono', monospace);
+  font-size: 40px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+.quota-lock-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0 0 16px;
+}
+.quota-stats {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+  font-family: var(--mono, monospace);
+}
+.quota-lock-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  opacity: 0.8;
+  margin: 0;
+}

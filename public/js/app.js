@@ -136,18 +136,32 @@ function setStatus(msg, right) {
 function updateAuthUI() {
   const label = $("#github-login-label");
   const btn = $("#btn-github-login");
-  if (state.token && state.login) {
-    if (label) label.textContent = state.login;
+  const welcomeBtn = $("#btn-github-login-welcome");
+  const connected = Boolean(state.token);
+  const displayName = state.login || "Connected";
+
+  if (connected) {
+    if (label) label.textContent = displayName;
     btn?.classList.add("connected");
-    btn && (btn.title = "Connected — click to disconnect");
-  } else if (state.token) {
-    if (label) label.textContent = "Connected";
-    btn?.classList.add("connected");
-    btn && (btn.title = "Connected — click to disconnect");
+    if (btn) btn.title = "Connected — click to disconnect";
+
+    if (welcomeBtn) {
+      welcomeBtn.classList.add("connected");
+      welcomeBtn.innerHTML = `<i class="fa-brands fa-github"></i> Disconnect${state.login ? ` (${state.login})` : ""}`;
+      welcomeBtn.title = "Disconnect GitHub account";
+      welcomeBtn.style.display = "";
+    }
   } else {
     if (label) label.textContent = "Connect GitHub";
     btn?.classList.remove("connected");
-    btn && (btn.title = "Connect GitHub account");
+    if (btn) btn.title = "Connect GitHub account";
+
+    if (welcomeBtn) {
+      welcomeBtn.classList.remove("connected");
+      welcomeBtn.innerHTML = `<i class="fa-brands fa-github"></i> Connect GitHub`;
+      welcomeBtn.title = "Connect GitHub account";
+      welcomeBtn.style.display = "";
+    }
   }
 }
 

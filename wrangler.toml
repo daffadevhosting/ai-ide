@@ -1,0 +1,21 @@
+name = "ai-ide"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+[ai]
+binding = "AI"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+# Uncomment and set after creating KV for sessions / cache if needed
+# [[kv_namespaces]]
+# binding = "SESSIONS"
+# id = "your-kv-id"
+
+# Secrets (set via `wrangler secret put`):
+# GITHUB_TOKEN or GITHUB_APP_ID / GITHUB_PRIVATE_KEY / GITHUB_INSTALLATION_ID
+# ACCOUNT_ID (for REST AI fallback)
+# CLOUDFLARE_API_TOKEN

@@ -12,7 +12,7 @@ Live example: `https://lumen.backendku.workers.dev/`
 
 | Area | Detail |
 |------|--------|
-| **Streaming AI** | SSE from Workers AI (`@cf/meta/llama-3.1-8b-instruct`) — review, fix, create, chat |
+| **Streaming AI** | SSE from Workers AI (`@cf/moonshotai/kimi-k2.7-code`) — review, fix, create, chat |
 | **Editor** | Monaco (VS Code engine), multi-tab, dirty indicator, apply AI output |
 | **GitHub** | OAuth **Connect GitHub**, or manual PAT; list repos, file tree, open/edit, commit |
 | **GitHub App** | Optional JWT (RS256) + installation token for server-side auth |

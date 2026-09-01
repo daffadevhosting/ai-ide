@@ -155,6 +155,22 @@ html, body {
 .btn.ghost:hover { background: var(--bg-hover); color: var(--text); }
 .btn.sm { padding: 4px 10px; font-size: 11px; }
 
+/* GitHub connect button */
+.btn.github {
+  background: #24292f;
+  color: #fff;
+}
+.btn.github:hover { background: #32383f; color: #fff; }
+[data-theme="light"] .btn.github {
+  background: #24292f;
+  color: #fff;
+}
+.btn.github.connected {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+
 .icon-btn {
   background: transparent;
   border: none;

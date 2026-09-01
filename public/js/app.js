@@ -18,6 +18,9 @@ const state = {
   inlineProviderDisposable: null,
 };
 
+// Latest quota snapshot from /api/quota or AI responses
+let lastQuota = null;
+
 function isMobile() {
   return window.matchMedia("(max-width: 768px)").matches;
 }
@@ -133,6 +136,31 @@ async function api(path, options = {}) {
 function setStatus(msg, right) {
   $("#status-left").textContent = msg;
   if (right !== undefined) $("#status-right").textContent = right;
+}
+
+/** Format neuron usage for the status bar (right side) */
+function formatNeuronStatus(q) {
+  if (!q || typeof q.used !== "number") return "Lumen · Workers AI";
+  const used = Math.round(q.used);
+  const limit = q.limit || 10000;
+  const rem = Math.max(0, limit - used);
+  const limitLabel = limit >= 1000 ? `${Math.round(limit / 1000)}k` : String(limit);
+  // Compact: "⚡ 380/10k" — show remaining when low
+  if (q.blocked) return `⚡ ${used}/${limitLabel} · locked`;
+  if (rem <= limit * 0.15) return `⚡ ${used}/${limitLabel} · low`;
+  return `⚡ ${used}/${limitLabel}`;
+}
+
+function updateNeuronBar(q) {
+  const el = $("#status-right");
+  if (!el) return;
+  if (q) lastQuota = q;
+  const text = formatNeuronStatus(lastQuota);
+  el.textContent = text;
+  el.classList.toggle("neuron-warn", Boolean(lastQuota && (lastQuota.blocked || lastQuota.used >= (lastQuota.softLimit || lastQuota.limit) * 0.85)));
+  el.title = lastQuota
+    ? `Neurons used today: ~${Math.round(lastQuota.used)} / ${lastQuota.limit} (soft ${lastQuota.softLimit})\nResets ${new Date(lastQuota.resetAt).toISOString().replace("T", " ").slice(0, 19)} UTC\nTracking: ${lastQuota.tracking || "memory"}`
+    : "Neuron usage";
 }
 
 // ---------- Auth / Token ----------
@@ -560,8 +588,8 @@ function updateInlineToggleUI() {
       ? "fa-solid fa-lightbulb"
       : "fa-regular fa-lightbulb";
   }
-  const right = state.inlineSuggest ? "Lumen · Inline AI" : "Lumen · Workers AI";
-  $("#status-right") && ($("#status-right").textContent = right);
+  // Keep neuron usage visible; only tweak title/tooltip if needed
+  updateNeuronBar(lastQuota);
 }
 
 function toggleInlineSuggest() {
@@ -635,6 +663,7 @@ function registerInlineCompletions() {
               }
 
               const data = await res.json().catch(() => ({}));
+              if (data?.quota) updateNeuronBar(data.quota);
               if (!res.ok) {
                 if (data?.code === "NEURON_QUOTA" || data?.quota?.blocked) {
                   handleQuotaError(data);
@@ -894,10 +923,13 @@ async function sendAI() {
 
     finishMessage(assistantDiv, fullText || "(empty response)");
     setStatus("AI ready");
+    // Refresh neuron counter after successful request
+    checkQuota();
   } catch (e) {
     assistantDiv.classList.remove("streaming");
     assistantDiv.innerHTML = formatMsgHtml(`Error: ${e.message}`);
     setStatus("AI error");
+    checkQuota();
   } finally {
     state.streaming = false;
   }
@@ -1064,7 +1096,6 @@ function bindEvents() {
 // ---------- Neuron quota gate ----------
 let quotaTimer = null;
 let quotaCountdownTimer = null;
-let lastQuota = null;
 
 function formatHMS(ms) {
   if (ms < 0) ms = 0;
@@ -1119,6 +1150,7 @@ async function checkQuota(forceUnlockAttempt) {
     if (!res.ok) return;
     const q = await res.json();
     lastQuota = q;
+    updateNeuronBar(q);
     if (q.blocked) {
       setQuotaLock(true, q);
       setStatus("AI paused · daily neuron quota");
@@ -1129,10 +1161,6 @@ async function checkQuota(forceUnlockAttempt) {
         state._inlineWasOn = false;
         updateInlineToggleUI();
       }
-      // Show soft usage in status when high
-      if (q.used >= q.softLimit * 0.85) {
-        setStatus(`Neurons ~${q.used}/${q.limit} · resets ${new Date(q.resetAt).toISOString().slice(11, 16)} UTC`);
-      }
     }
   } catch {
     /* ignore network */
@@ -1141,7 +1169,10 @@ async function checkQuota(forceUnlockAttempt) {
 
 function handleQuotaError(payload) {
   if (payload?.code === "NEURON_QUOTA" || payload?.quota?.blocked) {
-    setQuotaLock(true, payload.quota || payload);
+    const q = payload.quota || payload;
+    setQuotaLock(true, q);
+    updateNeuronBar(q);
+    setStatus("AI paused · daily neuron quota");
     return true;
   }
   return false;

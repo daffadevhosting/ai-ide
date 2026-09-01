@@ -731,9 +731,25 @@ function initEditor() {
       renderLineHighlight: "line",
       cursorBlinking: "smooth",
       smoothScrolling: true,
-      // Prefer inline completions UI
       inlineSuggest: { enabled: true },
       quickSuggestions: { other: true, comments: false, strings: false },
+      selectionHighlight: true,
+      occurrencesHighlight: "singleFile",
+      readOnly: false,
+      domReadOnly: false,
+    });
+
+    // Explicit Select All (Ctrl/Cmd+A) — some environments swallow Monaco's default
+    state.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyA, () => {
+      const model = state.editor.getModel();
+      if (!model) return;
+      state.editor.setSelection(model.getFullModelRange());
+      state.editor.focus();
+    });
+
+    // Clicking the container focuses the editor (needed after Apply)
+    $("#editor-container")?.addEventListener("mousedown", () => {
+      state.editor?.focus();
     });
 
     state.editor.onDidChangeModelContent(() => {
@@ -794,12 +810,25 @@ function escapeHtml(str) {
 }
 
 function formatMsgHtml(text) {
-  let html = escapeHtml(text);
-  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
-    return `<pre><code class="lang-${lang}">${escapeHtml(code.trim())}</code></pre>`;
+  // Extract fenced blocks first (before escaping / <br> conversion)
+  const blocks = [];
+  const withPlaceholders = String(text || "").replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
+    const idx = blocks.length;
+    const safeLang = (lang || "").replace(/[^\w+-]/g, "");
+    blocks.push({ lang: safeLang, code: code.trim() });
+    return `\u0000BLOCK${idx}\u0000`;
   });
+
+  let html = escapeHtml(withPlaceholders);
   html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
   html = html.replace(/\n/g, "<br>");
+
+  // Restore code blocks (unescaped content goes into <code> text)
+  html = html.replace(/\u0000BLOCK(\d+)\u0000/g, (_, n) => {
+    const b = blocks[Number(n)];
+    if (!b) return "";
+    return `<div class="code-block" data-lang="${b.lang}"><pre><code class="lang-${b.lang}">${escapeHtml(b.code)}</code></pre></div>`;
+  });
   return html;
 }
 
@@ -813,25 +842,176 @@ function addMessage(role, text, streaming = false) {
   return div;
 }
 
+/** Extract plain code text from a .code-block or <pre> */
+function getBlockCode(blockEl) {
+  const code = blockEl.querySelector("code");
+  if (code) return code.textContent || "";
+  const pre = blockEl.tagName === "PRE" ? blockEl : blockEl.querySelector("pre");
+  return pre ? pre.textContent || "" : "";
+}
+
+/** Guess a filename from the first lines of a code block (common AI patterns) */
+function guessFilenameFromCode(code, lang) {
+  const lines = String(code || "").split("\n").slice(0, 6);
+  for (const line of lines) {
+    // // path/to/file.ext   or   # path/to/file.ext   or   <!-- file.ext -->
+    let m =
+      line.match(/^\s*(?:\/\/|#|--)\s+([\w./\\-]+\.\w+)\s*$/) ||
+      line.match(/^\s*<!--\s*([\w./\\-]+\.\w+)\s*-->/) ||
+      line.match(/^\s*(?:File|Filename|Path)\s*:\s*([\w./\\-]+\.\w+)/i) ||
+      line.match(/^\s*(?:###|##)\s+([\w./\\-]+\.\w+)\s*$/);
+    if (m) return m[1].replace(/\\/g, "/");
+  }
+  // Fallback from language tag only if unique-ish
+  return null;
+}
+
+function findTabByPathHint(hint) {
+  if (!hint) return null;
+  const norm = hint.replace(/\\/g, "/").toLowerCase();
+  const base = norm.split("/").pop();
+  // Prefer exact path match, then basename match
+  return (
+    state.tabs.find((t) => (t.path || "").toLowerCase() === norm) ||
+    state.tabs.find((t) => (t.path || "").toLowerCase().endsWith("/" + base)) ||
+    state.tabs.find((t) => (t.path || "").toLowerCase().endsWith(base)) ||
+    null
+  );
+}
+
+function applyCodeToEditor(code, lang) {
+  if (!state.editor) {
+    setStatus("No editor open — buka file dulu");
+    return false;
+  }
+  let text = (code || "").replace(/\r\n/g, "\n").trim();
+  if (!text) {
+    setStatus("Empty code block");
+    return false;
+  }
+
+  // If AI labeled the block with a filename and that tab is open, switch to it
+  const hint = guessFilenameFromCode(text, lang);
+  const targetTab = findTabByPathHint(hint);
+  if (targetTab && targetTab.id !== state.activeTabId) {
+    activateTab(targetTab.id);
+  }
+
+  const tab = getActiveTab();
+  state.editor.setValue(text);
+
+  // Switch language if Monaco knows it
+  if (lang && window.monaco) {
+    const model = state.editor.getModel();
+    if (model) {
+      const map = {
+        js: "javascript",
+        ts: "typescript",
+        py: "python",
+        sh: "shell",
+        bash: "shell",
+        yml: "yaml",
+        md: "markdown",
+        htm: "html",
+      };
+      const monoLang = map[lang] || lang;
+      try {
+        monaco.editor.setModelLanguage(model, monoLang);
+      } catch {
+        /* ignore unknown lang */
+      }
+      if (tab) tab.language = monoLang;
+    }
+  }
+
+  if (tab) {
+    tab.content = text;
+    tab.dirty = true;
+    renderTabs();
+  }
+  const label = tab?.path || "editor";
+  setStatus(hint && targetTab ? `Applied to ${label}` : `Applied to ${label}`);
+  state.editor.focus();
+  return true;
+}
+
+async function copyCodeToClipboard(code, btn) {
+  const text = (code || "").replace(/\r\n/g, "\n");
+  try {
+    await navigator.clipboard.writeText(text);
+    if (btn) {
+      const prev = btn.innerHTML;
+      btn.innerHTML = `<i class="fa-solid fa-check"></i> Copied`;
+      btn.classList.add("copied");
+      setTimeout(() => {
+        btn.innerHTML = prev;
+        btn.classList.remove("copied");
+      }, 1500);
+    }
+    setStatus("Code copied");
+  } catch {
+    // Fallback
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand("copy");
+      setStatus("Code copied");
+    } catch {
+      setStatus("Copy failed");
+    }
+    document.body.removeChild(ta);
+  }
+}
+
+/** Attach Copy + Apply buttons to every code block inside an assistant message */
+function enhanceCodeBlocks(msgDiv) {
+  const blocks = msgDiv.querySelectorAll(".code-block");
+  blocks.forEach((block) => {
+    if (block.querySelector(".code-actions")) return; // already enhanced
+
+    const lang = block.getAttribute("data-lang") || "";
+    const actions = document.createElement("div");
+    actions.className = "code-actions";
+
+    const langLabel = document.createElement("span");
+    langLabel.className = "code-lang";
+    langLabel.textContent = lang || "code";
+
+    const btnCopy = document.createElement("button");
+    btnCopy.type = "button";
+    btnCopy.className = "btn ghost sm code-btn";
+    btnCopy.innerHTML = `<i class="fa-regular fa-copy"></i> Copy`;
+    btnCopy.title = "Copy code";
+    btnCopy.onclick = (e) => {
+      e.stopPropagation();
+      copyCodeToClipboard(getBlockCode(block), btnCopy);
+    };
+
+    const btnApply = document.createElement("button");
+    btnApply.type = "button";
+    btnApply.className = "btn accent sm code-btn";
+    btnApply.innerHTML = `<i class="fa-solid fa-check"></i> Apply`;
+    btnApply.title = "Apply this block to the active editor tab";
+    btnApply.onclick = (e) => {
+      e.stopPropagation();
+      applyCodeToEditor(getBlockCode(block), lang);
+    };
+
+    actions.appendChild(langLabel);
+    actions.appendChild(btnCopy);
+    actions.appendChild(btnApply);
+    block.insertBefore(actions, block.firstChild);
+  });
+}
+
 function finishMessage(div, fullText) {
   div.classList.remove("streaming");
   div.innerHTML = formatMsgHtml(fullText);
-  if (fullText.includes("```")) {
-    const btn = document.createElement("button");
-    btn.className = "btn accent sm apply-btn";
-    btn.innerHTML = `<i class="fa-solid fa-check"></i> Apply to editor`;
-    btn.onclick = () => {
-      const match = fullText.match(/```(?:\w*)\n([\s\S]*?)```/);
-      if (match && state.editor) {
-        state.editor.setValue(match[1].trim());
-        const tab = getActiveTab();
-        if (tab) tab.dirty = true;
-        renderTabs();
-        setStatus("Code applied to editor");
-      }
-    };
-    div.appendChild(btn);
-  }
+  enhanceCodeBlocks(div);
 }
 
 async function sendAI() {

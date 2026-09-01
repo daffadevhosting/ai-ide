@@ -12,7 +12,7 @@ export interface Env {
   GITHUB_APP_ID?: string;
   GITHUB_PRIVATE_KEY?: string;
   GITHUB_INSTALLATION_ID?: string;
-  /** OAuth App / GitHub App client */
+  /** OAuth App / GitHub App client credentials for "Connect GitHub" */
   GITHUB_CLIENT_ID?: string;
   GITHUB_CLIENT_SECRET?: string;
   ACCOUNT_ID?: string;
@@ -24,7 +24,7 @@ export interface Env {
 }
 
 const CORS_HEADERS: Record<string, string> = {
-  "Access-Control-Allow-Origin": "https://lumen.backendku.workers.dev/",
+  "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-GitHub-Token",
 };
@@ -33,7 +33,7 @@ const CORS_HEADERS: Record<string, string> = {
 // Qwen2.5-Coder-32B: 32k context, LoRA yes. Pricing ~$0.66/M in, $1/M out
 const CODE_MODEL = "@cf/qwen/qwen2.5-coder-32b-instruct";
 // Light model for inline ghost-text (neuron-friendly)
-const COMPLETE_MODEL = "@cf/mistral/mistral-7b-instruct-v0.2-lora";
+const COMPLETE_MODEL = "@cf/meta/llama-3.2-1b-instruct";
 
 // Simple in-memory cache for installation tokens (per isolate)
 let cachedInstallToken: { token: string; expiresAt: number } | null = null;
@@ -268,7 +268,7 @@ async function getInstallationToken(env: Env): Promise<string | null> {
         Accept: "application/vnd.github+json",
         Authorization: `Bearer ${jwt}`,
         "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "LUMEN-AI-IDE-Cloudflare-Worker",
+        "User-Agent": "AI-IDE-Cloudflare-Worker",
       },
     }
   );
@@ -417,18 +417,21 @@ Apply the user's requested changes or fix obvious bugs in the provided code.
 Rules:
 - Return the COMPLETE updated file/code in ONE markdown fenced code block with the correct language tag.
 - Preserve style and unrelated code unless a change is required.
-- Do not wrap the answer in extra commentary outside the code block unless the user asked for an explanation.`,
+- Do not wrap the answer in extra commentary outside the code block unless the user asked for an explanation.
+- Preserve every numeric literal exactly (0, 0px, 100%, rgba(0,0,0,.2) — never drop zeros).`,
     create: `You are Lumen, an expert programmer inside an IDE.
 Write production-quality code for the user's request.
 Rules:
 - Prefer clear structure, correct APIs, and minimal dependencies.
 - Include necessary imports and brief comments only where helpful.
 - Return the main deliverable in a markdown fenced code block with a language tag.
-- If multiple files are needed, use separate fenced blocks and label each with a filename comment on the first line.`,
+- If multiple files are needed, use separate fenced blocks and label each with a filename comment on the first line.
+- Preserve every numeric literal exactly (0, 0px, 100%, rgba(0,0,0,.2) — never drop zeros).`,
     chat: `You are Lumen, an expert AI coding assistant embedded in an IDE (Qwen2.5-Coder-32B).
 Help with coding, debugging, refactors, explanations, and architecture.
 When you output code, use markdown fenced blocks with language tags.
-Be accurate, concise, and practical.`,
+Be accurate, concise, and practical.
+Preserve every numeric literal in code exactly (do not drop zeros).`,
   };
 
   const system = systemPrompts[body.action] || systemPrompts.chat;

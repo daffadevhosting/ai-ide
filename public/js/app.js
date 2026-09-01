@@ -21,24 +21,11 @@ function isMobile() {
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
-// ---------- Lucide Icons ----------
-function refreshIcons(root) {
-  const api = window.lucide;
-  if (!api || typeof api.createIcons !== "function") {
-    console.warn('Lucide belum siap');
-    return;
-  }
-  try {
-    api.createIcons({
-      root: root || document.body,
-      attrs: { "stroke-width": 2 },
-    });
-  } catch (e) {
-    console.warn('Error refreshing icons:', e);
-  }
+function fa(name) {
+  return `<i class="fa-solid fa-${name}"></i>`;
 }
 
-// ---------- Native-looking dialogs (match Lumen UI) ----------
+// ---------- Custom dialogs (alert / confirm / prompt) ----------
 const ui = {
   _resolve: null,
 
@@ -49,9 +36,17 @@ const ui = {
       const input = $("#ui-dialog-input");
       const cancel = $("#ui-dialog-cancel");
       const ok = $("#ui-dialog-ok");
+      const iconEl = $("#ui-dialog-icon");
 
-      $("#ui-dialog-title").textContent = title || (mode === "prompt" ? "Input" : mode === "confirm" ? "Confirm" : "Notice");
+      $("#ui-dialog-title").textContent =
+        title || (mode === "prompt" ? "Input" : mode === "confirm" ? "Confirm" : "Notice");
       $("#ui-dialog-message").textContent = message || "";
+
+      if (iconEl) {
+        if (mode === "confirm") iconEl.innerHTML = fa("circle-question");
+        else if (mode === "prompt") iconEl.innerHTML = fa("pen-to-square");
+        else iconEl.innerHTML = fa("circle-info");
+      }
 
       if (mode === "prompt") {
         input.classList.remove("hidden");
@@ -70,7 +65,6 @@ const ui = {
 
       dialog.classList.remove("hidden");
       setTimeout(() => {
-        refreshIcons(dialog);
         if (mode === "prompt") {
           input.focus();
           input.select();
@@ -104,10 +98,9 @@ function applyTheme(theme) {
   state.theme = theme;
   document.documentElement.setAttribute("data-theme", theme);
   localStorage.setItem("theme", theme);
-  const icon = $("#theme-icon");
-  if (icon) {
-    icon.setAttribute("data-lucide", theme === "dark" ? "sun" : "moon");
-    refreshIcons();
+  const el = $("#theme-icon");
+  if (el) {
+    el.className = theme === "dark" ? "fa-solid fa-sun" : "fa-solid fa-moon";
   }
   if (window.monaco && state.editor) {
     monaco.editor.setTheme(theme === "dark" ? "vs-dark" : "vs");
@@ -143,7 +136,6 @@ function openTokenModal() {
   $("#token-input").value = state.token;
   $("#token-modal").classList.remove("hidden");
   $("#token-input").focus();
-  refreshIcons();
 }
 function closeTokenModal() {
   $("#token-modal").classList.add("hidden");
@@ -161,10 +153,9 @@ async function loadRepos() {
   if (!state.token) {
     $("#view-repos").innerHTML = `
       <div class="empty-state">
-        <i data-lucide="key-round" style="width:32px;height:32px;opacity:.4;margin-bottom:8px"></i>
+        <i class="fa-solid fa-key" style="font-size:28px;opacity:.4;margin-bottom:8px"></i>
         <div>Set GitHub token to load repos</div>
       </div>`;
-    refreshIcons();
     return;
   }
   setStatus("Loading repositories...");
@@ -183,7 +174,6 @@ function renderRepos() {
   const el = $("#view-repos");
   if (!state.repos.length) {
     el.innerHTML = `<div class="empty-state">No repositories found</div>`;
-    refreshIcons();
     return;
   }
   el.innerHTML = state.repos
@@ -191,12 +181,11 @@ function renderRepos() {
       (r) => `
     <div class="repo-item ${state.currentRepo?.name === r.name ? "active" : ""}"
          data-owner="${r.owner.login}" data-name="${r.name}" data-branch="${r.default_branch}">
-      <span class="icon"><i data-lucide="${r.private ? "lock" : "folder"}"></i></span>
+      <span class="icon"><i class="fa-solid fa-${r.private ? "lock" : "folder"}"></i></span>
       <span>${r.full_name}</span>
     </div>`
     )
     .join("");
-  refreshIcons();
 
   el.querySelectorAll(".repo-item").forEach((item) => {
     item.addEventListener("click", () => {
@@ -243,12 +232,11 @@ function renderTree(items) {
       const icon = item.type === "dir" ? "folder" : "file-code";
       return `
       <div class="tree-item" data-type="${item.type}" data-path="${item.path}" data-sha="${item.sha || ""}">
-        <span class="icon"><i data-lucide="${icon}"></i></span>
+        <span class="icon"><i class="fa-solid fa-${icon}"></i></span>
         <span>${item.name}</span>
       </div>`;
     })
     .join("");
-  refreshIcons();
 
   el.querySelectorAll(".tree-item").forEach((item) => {
     item.addEventListener("click", () => {
@@ -319,18 +307,16 @@ function renderTabs() {
          data-id="${t.id}">
       <span class="tab-name">${t.path.split("/").pop()}</span>
       <span class="tab-close" data-close="${t.id}" title="Close">
-        <i data-lucide="x" style="width:12px;height:12px"></i>
+        <i class="fa-solid fa-xmark" style="font-size:11px"></i>
       </span>
     </div>`
     )
     .join("");
-  refreshIcons();
 
   list.querySelectorAll(".editor-tab").forEach((el) => {
     el.addEventListener("click", (e) => {
       if (e.target.closest("[data-close]")) return;
       activateTab(el.dataset.id);
-      refreshIcons();
     });
   });
   list.querySelectorAll("[data-close]").forEach((btn) => {
@@ -459,9 +445,6 @@ function initEditor() {
         renderTabs();
       }
     });
-
-    // Refresh icons after editor loads
-    refreshIcons();
   });
 }
 
@@ -526,7 +509,6 @@ function addMessage(role, text, streaming = false) {
   div.innerHTML = formatMsgHtml(text);
   el.appendChild(div);
   el.scrollTop = el.scrollHeight;
-  refreshIcons();
   return div;
 }
 
@@ -536,7 +518,7 @@ function finishMessage(div, fullText) {
   if (fullText.includes("```")) {
     const btn = document.createElement("button");
     btn.className = "btn accent sm apply-btn";
-    btn.innerHTML = `<i data-lucide="check"></i> Apply to editor`;
+    btn.innerHTML = `<i class="fa-solid fa-check"></i> Apply to editor`;
     btn.onclick = () => {
       const match = fullText.match(/```(?:\w*)\n([\s\S]*?)```/);
       if (match && state.editor) {
@@ -545,11 +527,9 @@ function finishMessage(div, fullText) {
         if (tab) tab.dirty = true;
         renderTabs();
         setStatus("Code applied to editor");
-        refreshIcons();
       }
     };
     div.appendChild(btn);
-    refreshIcons();
   }
 }
 
@@ -624,7 +604,6 @@ async function sendAI() {
               fullText += chunk;
               assistantDiv.innerHTML = formatMsgHtml(fullText);
               $("#ai-messages").scrollTop = $("#ai-messages").scrollHeight;
-              refreshIcons();
             }
           } catch {
             /* ignore partial */
@@ -639,7 +618,6 @@ async function sendAI() {
     assistantDiv.classList.remove("streaming");
     assistantDiv.innerHTML = formatMsgHtml(`Error: ${e.message}`);
     setStatus("AI error");
-    refreshIcons();
   } finally {
     state.streaming = false;
   }
@@ -663,10 +641,7 @@ function setSidebarOpen(open) {
   }
   updateBackdrop();
   // Let Monaco relayout after width change
-  setTimeout(() => {
-    state.editor?.layout?.();
-    refreshIcons();
-  }, 220);
+  setTimeout(() => state.editor?.layout?.(), 220);
 }
 
 function toggleSidebar() {
@@ -681,10 +656,7 @@ function setAIOpen(open) {
     setSidebarOpen(false);
   }
   updateBackdrop();
-  setTimeout(() => {
-    state.editor?.layout?.();
-    refreshIcons();
-  }, 220);
+  setTimeout(() => state.editor?.layout?.(), 220);
 }
 
 function toggleAI() {
@@ -702,7 +674,6 @@ function closeOverlays() {
 function switchView(name) {
   $$(".sidebar-header .tab").forEach((t) => t.classList.toggle("active", t.dataset.view === name));
   $$(".view").forEach((v) => v.classList.toggle("active", v.id === `view-${name}`));
-  refreshIcons();
 }
 
 // ---------- Events ----------
@@ -724,13 +695,11 @@ function bindEvents() {
     const isPrompt = !input.classList.contains("hidden");
     if (isPrompt) ui._close(input.value);
     else ui._close(true);
-    refreshIcons();
   };
   $("#ui-dialog-cancel").onclick = () => {
     const input = $("#ui-dialog-input");
     const isPrompt = !input.classList.contains("hidden");
     ui._close(isPrompt ? null : false);
-    refreshIcons();
   };
   $("#ui-dialog").addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
@@ -744,12 +713,33 @@ function bindEvents() {
     }
   });
 
+  // Custom select (AI action)
+  const trigger = $("#ai-action-trigger");
+  const menu = $("#ai-action-menu");
+  const nativeSelect = $("#ai-action");
+  const label = $("#ai-action-label");
+  if (trigger && menu && nativeSelect) {
+    trigger.onclick = (e) => {
+      e.stopPropagation();
+      menu.classList.toggle("hidden");
+    };
+    menu.querySelectorAll("li").forEach((li) => {
+      li.onclick = () => {
+        const value = li.dataset.value;
+        nativeSelect.value = value;
+        label.textContent = li.textContent;
+        menu.querySelectorAll("li").forEach((x) => x.classList.toggle("active", x === li));
+        menu.classList.add("hidden");
+      };
+    });
+    document.addEventListener("click", () => menu.classList.add("hidden"));
+  }
+
   $("#backdrop").onclick = closeOverlays;
 
   $("#btn-refresh").onclick = () => {
     if ($(".sidebar-header .tab.active")?.dataset.view === "repos") loadRepos();
     else if (state.currentRepo) loadTree(state.currentPath);
-    refreshIcons();
   };
 
   $("#btn-use-selection").onclick = () => {
@@ -758,7 +748,6 @@ function bindEvents() {
     if (!model) return;
     const sel = model.getValueInRange(state.editor.getSelection());
     if (sel) $("#ai-input").value = ($("#ai-input").value + "\n" + sel).trim();
-    refreshIcons();
   };
 
   $("#ai-input").addEventListener("keydown", (e) => {
@@ -769,10 +758,7 @@ function bindEvents() {
   });
 
   $$(".sidebar-header .tab").forEach((t) => {
-    t.onclick = () => {
-      switchView(t.dataset.view);
-      refreshIcons();
-    };
+    t.onclick = () => switchView(t.dataset.view);
   });
 
   // Keep layout correct on rotate / resize
@@ -787,17 +773,6 @@ function bindEvents() {
       $("#backdrop")?.classList.remove("visible");
     }
     state.editor?.layout?.();
-    refreshIcons();
-  });
-
-  // Extra refresh for dynamic content
-  const observer = new MutationObserver(() => {
-    refreshIcons();
-  });
-  observer.observe(document.body, {
-    childList: true,
-    subtree: true,
-    attributes: false,
   });
 }
 
@@ -814,13 +789,11 @@ function init() {
   setAIOpen(false);
   bindEvents();
   initEditor();
-  
-  // Initial icon refresh
-  setTimeout(refreshIcons, 100);
-  
+
   if (state.token) loadRepos();
   setStatus("Lumen ready · Set token to begin");
 }
 
-// Start the app
 init();
+
+

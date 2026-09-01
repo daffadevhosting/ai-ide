@@ -33,7 +33,7 @@ const CORS_HEADERS: Record<string, string> = {
 // Qwen2.5-Coder-32B: 32k context, LoRA yes. Pricing ~$0.66/M in, $1/M out
 const CODE_MODEL = "@cf/qwen/qwen2.5-coder-32b-instruct";
 // Light model for inline ghost-text (neuron-friendly)
-const COMPLETE_MODEL = "@cf/meta/llama-3.2-3b-instruct";
+const COMPLETE_MODEL = "@cf/mistral/mistral-7b-instruct-v0.2-lora";
 
 // Simple in-memory cache for installation tokens (per isolate)
 let cachedInstallToken: { token: string; expiresAt: number } | null = null;

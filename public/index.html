@@ -11,15 +11,21 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/css/styles.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.0/min/vs/loader.min.js"></script>
-  <script src="https://unpkg.com/lucide@0.468.0"></script>
+  <!-- Lucide UMD (jsDelivr is more reliable than unpkg for createIcons) -->
+  <script src="https://cdn.jsdelivr.net/npm/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body>
   <div id="app">
     <!-- Top bar -->
     <header class="topbar">
-      <div class="brand">
-        <img src="/assets/logo.svg" alt="Lumen" class="brand-logo" width="22" height="22" />
-        <span>Lumen</span>
+      <div class="topbar-left">
+        <button id="btn-sidebar" class="icon-btn" title="Toggle sidebar">
+          <i data-lucide="menu"></i>
+        </button>
+        <div class="brand">
+          <img src="/assets/logo.svg" alt="Lumen" class="brand-logo" width="22" height="22" />
+          <span class="brand-text">Lumen</span>
+        </div>
       </div>
       <div class="topbar-center">
         <span id="current-file" class="current-file">No file open</span>
@@ -28,19 +34,22 @@
         <button id="btn-theme" class="icon-btn" title="Toggle theme">
           <i data-lucide="sun" id="theme-icon"></i>
         </button>
-        <button id="btn-token" class="btn ghost" title="Set GitHub Token">
-          <i data-lucide="key-round"></i> Token
+        <button id="btn-token" class="btn ghost btn-label" title="Set GitHub Token">
+          <i data-lucide="key-round"></i> <span class="label">Token</span>
         </button>
-        <button id="btn-save" class="btn primary" title="Commit & Push">
-          <i data-lucide="git-commit-horizontal"></i> Commit
+        <button id="btn-save" class="btn primary btn-label" title="Commit & Push">
+          <i data-lucide="git-commit"></i> <span class="label">Commit</span>
         </button>
-        <button id="btn-ai-toggle" class="btn accent" title="Toggle AI Panel">
-          <i data-lucide="sparkles"></i> AI
+        <button id="btn-ai-toggle" class="btn accent btn-label" title="Toggle AI Panel">
+          <i data-lucide="sparkles"></i> <span class="label">AI</span>
         </button>
       </div>
     </header>
 
     <div class="main">
+      <!-- Backdrop for mobile drawers -->
+      <div id="backdrop" class="backdrop"></div>
+
       <!-- Sidebar -->
       <aside id="sidebar" class="sidebar">
         <div class="sidebar-header">
@@ -52,9 +61,14 @@
               <i data-lucide="files"></i> Files
             </button>
           </div>
-          <button id="btn-refresh" class="icon-btn" title="Refresh">
-            <i data-lucide="refresh-cw"></i>
-          </button>
+          <div class="sidebar-header-actions">
+            <button id="btn-refresh" class="icon-btn" title="Refresh">
+              <i data-lucide="refresh-cw"></i>
+            </button>
+            <button id="btn-sidebar-close" class="icon-btn sidebar-close-btn" title="Close sidebar">
+              <i data-lucide="x"></i>
+            </button>
+          </div>
         </div>
         <div id="sidebar-content" class="sidebar-content">
           <div id="view-repos" class="view active">
@@ -110,7 +124,7 @@
           <textarea id="ai-input" placeholder="Ask AI to review, fix, or create code... (Ctrl/⌘+Enter)" rows="3"></textarea>
           <div class="ai-input-actions">
             <button id="btn-use-selection" class="btn ghost sm">
-              <i data-lucide="text-select"></i> Selection
+              <i data-lucide="text-cursor-input"></i> Selection
             </button>
             <button id="btn-send-ai" class="btn accent sm">
               <i data-lucide="send"></i> Send
@@ -144,6 +158,20 @@
     </div>
   </div>
 
+  <!-- Unified dialog (alert / confirm / prompt) -->
+  <div id="ui-dialog" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-content ui-dialog-content">
+      <h2 id="ui-dialog-title"></h2>
+      <p id="ui-dialog-message"></p>
+      <input type="text" id="ui-dialog-input" class="hidden" autocomplete="off" />
+      <div class="modal-actions">
+        <button id="ui-dialog-cancel" class="btn ghost hidden">Cancel</button>
+        <button id="ui-dialog-ok" class="btn primary">OK</button>
+      </div>
+    </div>
+  </div>
+
   <script src="/js/app.js"></script>
 </body>
 </html>
+

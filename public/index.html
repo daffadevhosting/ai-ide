@@ -11,7 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <!-- Font Awesome 6 -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
-  <link rel="stylesheet" href="/css/styles.css?v=20260901d" />
+  <link rel="stylesheet" href="/css/styles.css?v=20260901e" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.0/min/vs/loader.min.js"></script>
 </head>
 <body>
@@ -33,7 +33,10 @@
         <button id="btn-theme" class="icon-btn" title="Toggle theme">
           <i class="fa-solid fa-sun" id="theme-icon"></i>
         </button>
-        <button id="btn-token" class="btn ghost btn-label" title="Set GitHub Token">
+        <button id="btn-github-login" class="btn github btn-label" title="Connect GitHub account">
+          <i class="fa-brands fa-github"></i> <span class="label" id="github-login-label">Connect GitHub</span>
+        </button>
+        <button id="btn-token" class="btn ghost btn-label" title="Set token manually (PAT)">
           <i class="fa-solid fa-key"></i> <span class="label">Token</span>
         </button>
         <button id="btn-save" class="btn primary btn-label" title="Commit & Push">
@@ -92,10 +95,13 @@
           <p class="tagline">Clarity for every line</p>
           <p class="sub">Cloudflare Workers AI · GitHub powered</p>
           <ol>
-            <li>Set your <strong>GitHub Personal Access Token</strong> (repo scope) or configure GitHub App</li>
-            <li>Select a repository from the sidebar</li>
-            <li>Open files — they appear as tabs. Use <strong>AI</strong> to review, fix or create code</li>
+            <li>Klik <strong>Connect GitHub</strong> untuk login, atau isi PAT lewat tombol Token</li>
+            <li>Pilih repository di sidebar</li>
+            <li>Buka file di tab, lalu pakai <strong>AI</strong> untuk review / fix / create code</li>
           </ol>
+          <button id="btn-github-login-welcome" class="btn github" style="margin-top:20px">
+            <i class="fa-brands fa-github"></i> Connect GitHub
+          </button>
         </div>
       </section>
 
@@ -177,6 +183,6 @@
     </div>
   </div>
 
-  <script src="/js/app.js?v=20260901d"></script>
+  <script src="/js/app.js?v=20260901e"></script>
 </body>
 </html>

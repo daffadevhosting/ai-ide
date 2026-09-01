@@ -29,3 +29,7 @@ invocation_logs = true
 enabled = false
 persist = true
 head_sampling_rate = 1
+
+[vars]
+NEURON_DAILY_LIMIT = "10000"
+NEURON_SOFT_LIMIT = "9800"

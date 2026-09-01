@@ -600,7 +600,7 @@ async function handleCommit(request: Request, env: Env): Promise<Response> {
 
   // Always attribute commits to Lumen as committer
   const lumenIdentity = {
-    name: "Lumen",
+    name: "Lumen AI-IDE",
     email: "lumen@users.noreply.github.com",
   };
 

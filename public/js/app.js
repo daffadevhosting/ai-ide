@@ -9,16 +9,91 @@ const state = {
   tabs: [], // { id, path, sha, content, language, dirty, model? }
   activeTabId: null,
   editor: null,
+  sidebarOpen: true,  // desktop default open; mobile starts closed via CSS
   aiOpen: false,
   streaming: false,
 };
 
+function isMobile() {
+  return window.matchMedia("(max-width: 768px)").matches;
+}
+
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
-function refreshIcons() {
-  if (window.lucide) lucide.createIcons();
+function refreshIcons(root) {
+  const api = window.lucide;
+  if (!api || typeof api.createIcons !== "function") return;
+  try {
+    api.createIcons({
+      root: root || document.body,
+      attrs: { "stroke-width": 2 },
+    });
+  } catch {
+    try { api.createIcons(); } catch { /* ignore */ }
+  }
 }
+
+// ---------- Native-looking dialogs (match Lumen UI) ----------
+const ui = {
+  _resolve: null,
+
+  _show({ title, message, mode, defaultValue }) {
+    return new Promise((resolve) => {
+      this._resolve = resolve;
+      const dialog = $("#ui-dialog");
+      const input = $("#ui-dialog-input");
+      const cancel = $("#ui-dialog-cancel");
+      const ok = $("#ui-dialog-ok");
+
+      $("#ui-dialog-title").textContent = title || (mode === "prompt" ? "Input" : mode === "confirm" ? "Confirm" : "Notice");
+      $("#ui-dialog-message").textContent = message || "";
+
+      if (mode === "prompt") {
+        input.classList.remove("hidden");
+        input.value = defaultValue || "";
+        cancel.classList.remove("hidden");
+        ok.textContent = "OK";
+      } else if (mode === "confirm") {
+        input.classList.add("hidden");
+        cancel.classList.remove("hidden");
+        ok.textContent = "OK";
+      } else {
+        input.classList.add("hidden");
+        cancel.classList.add("hidden");
+        ok.textContent = "OK";
+      }
+
+      dialog.classList.remove("hidden");
+      refreshIcons(dialog);
+      setTimeout(() => {
+        if (mode === "prompt") {
+          input.focus();
+          input.select();
+        } else {
+          ok.focus();
+        }
+      }, 30);
+    });
+  },
+
+  _close(result) {
+    $("#ui-dialog")?.classList.add("hidden");
+    const r = this._resolve;
+    this._resolve = null;
+    if (r) r(result);
+  },
+
+  alert(message, title = "Lumen") {
+    return this._show({ title, message, mode: "alert" });
+  },
+  confirm(message, title = "Confirm") {
+    return this._show({ title, message, mode: "confirm" });
+  },
+  prompt(message, defaultValue = "", title = "Input") {
+    return this._show({ title, message, mode: "prompt", defaultValue });
+  },
+};
 
 // ---------- Theme ----------
 function applyTheme(theme) {
@@ -286,11 +361,14 @@ function activateTab(id) {
   renderTabs();
 }
 
-function closeTab(id) {
+async function closeTab(id) {
   const idx = state.tabs.findIndex((t) => t.id === id);
   if (idx === -1) return;
   const tab = state.tabs[idx];
-  if (tab.dirty && !confirm(`Close "${tab.path}"? Unsaved changes will be lost.`)) return;
+  if (tab.dirty) {
+    const ok = await ui.confirm(`Close "${tab.path}"?\nUnsaved changes will be lost.`, "Close tab");
+    if (!ok) return;
+  }
   if (tab.model && !tab.model.isDisposed?.()) tab.model.dispose();
   state.tabs.splice(idx, 1);
 
@@ -314,6 +392,7 @@ async function openFile(path, sha) {
   const existing = state.tabs.find((t) => t.id === id);
   if (existing) {
     activateTab(id);
+    if (isMobile()) setSidebarOpen(false);
     return;
   }
 
@@ -339,6 +418,7 @@ async function openFile(path, sha) {
     };
     state.tabs.push(tab);
     activateTab(id);
+    if (isMobile()) setSidebarOpen(false);
     setStatus(`Opened ${path}`);
   } catch (e) {
     setStatus(`Error: ${e.message}`);
@@ -383,8 +463,8 @@ async function commitFile() {
     return;
   }
   const content = state.editor.getValue();
-  const message = prompt("Commit message:", `Update ${tab.path}`);
-  if (!message) return;
+  const message = await ui.prompt("Commit message:", `Update ${tab.path}`, "Commit");
+  if (message === null || message === "") return;
 
   setStatus("Committing...");
   try {
@@ -407,7 +487,7 @@ async function commitFile() {
     setStatus("Committed successfully ✓");
   } catch (e) {
     setStatus(`Commit failed: ${e.message}`);
-    alert("Commit failed: " + e.message);
+    await ui.alert("Commit failed: " + e.message, "Commit error");
   }
 }
 
@@ -552,14 +632,56 @@ async function sendAI() {
   }
 }
 
+function updateBackdrop() {
+  const show = isMobile() && (state.sidebarOpen || state.aiOpen);
+  $("#backdrop")?.classList.toggle("visible", show);
+}
+
+function setSidebarOpen(open) {
+  state.sidebarOpen = open;
+  const el = $("#sidebar");
+  if (!el) return;
+  if (isMobile()) {
+    el.classList.toggle("open", open);
+    el.classList.remove("collapsed");
+  } else {
+    el.classList.toggle("collapsed", !open);
+    el.classList.remove("open");
+  }
+  updateBackdrop();
+  // Let Monaco relayout after width change
+  setTimeout(() => state.editor?.layout?.(), 220);
+}
+
+function toggleSidebar() {
+  setSidebarOpen(!state.sidebarOpen);
+}
+
+function setAIOpen(open) {
+  state.aiOpen = open;
+  $("#ai-panel")?.classList.toggle("open", open);
+  // On mobile, close sidebar when opening AI
+  if (open && isMobile() && state.sidebarOpen) {
+    setSidebarOpen(false);
+  }
+  updateBackdrop();
+  setTimeout(() => state.editor?.layout?.(), 220);
+}
+
 function toggleAI() {
-  state.aiOpen = !state.aiOpen;
-  $("#ai-panel").classList.toggle("open", state.aiOpen);
+  setAIOpen(!state.aiOpen);
+}
+
+function closeOverlays() {
+  if (isMobile()) {
+    setSidebarOpen(false);
+    setAIOpen(false);
+  }
 }
 
 // ---------- Views ----------
 function switchView(name) {
-  $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.view === name));
+  $$(".sidebar-header .tab").forEach((t) => t.classList.toggle("active", t.dataset.view === name));
   $$(".view").forEach((v) => v.classList.toggle("active", v.id === `view-${name}`));
 }
 
@@ -570,12 +692,40 @@ function bindEvents() {
   $("#btn-save-token").onclick = saveToken;
   $("#btn-save").onclick = commitFile;
   $("#btn-ai-toggle").onclick = toggleAI;
-  $("#btn-close-ai").onclick = toggleAI;
+  $("#btn-close-ai").onclick = () => setAIOpen(false);
   $("#btn-send-ai").onclick = sendAI;
   $("#btn-theme").onclick = toggleTheme;
+  $("#btn-sidebar").onclick = toggleSidebar;
+  $("#btn-sidebar-close").onclick = () => setSidebarOpen(false);
+
+  // Custom dialog actions
+  $("#ui-dialog-ok").onclick = () => {
+    const input = $("#ui-dialog-input");
+    const isPrompt = !input.classList.contains("hidden");
+    if (isPrompt) ui._close(input.value);
+    else ui._close(true);
+  };
+  $("#ui-dialog-cancel").onclick = () => {
+    const input = $("#ui-dialog-input");
+    const isPrompt = !input.classList.contains("hidden");
+    ui._close(isPrompt ? null : false);
+  };
+  $("#ui-dialog").addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      const input = $("#ui-dialog-input");
+      const isPrompt = !input.classList.contains("hidden");
+      ui._close(isPrompt ? null : false);
+    }
+    if (e.key === "Enter" && e.target === $("#ui-dialog-input")) {
+      e.preventDefault();
+      ui._close($("#ui-dialog-input").value);
+    }
+  });
+
+  $("#backdrop").onclick = closeOverlays;
 
   $("#btn-refresh").onclick = () => {
-    if ($(".tab.active")?.dataset.view === "repos") loadRepos();
+    if ($(".sidebar-header .tab.active")?.dataset.view === "repos") loadRepos();
     else if (state.currentRepo) loadTree(state.currentPath);
   };
 
@@ -597,16 +747,47 @@ function bindEvents() {
   $$(".sidebar-header .tab").forEach((t) => {
     t.onclick = () => switchView(t.dataset.view);
   });
+
+  // Keep layout correct on rotate / resize
+  window.addEventListener("resize", () => {
+    if (isMobile()) {
+      // Mobile: panels are overlays — don't force desktop collapsed state
+      $("#sidebar")?.classList.remove("collapsed");
+      if (!state.sidebarOpen) $("#sidebar")?.classList.remove("open");
+    } else {
+      $("#sidebar")?.classList.remove("open");
+      $("#sidebar")?.classList.toggle("collapsed", !state.sidebarOpen);
+      $("#backdrop")?.classList.remove("visible");
+    }
+    state.editor?.layout?.();
+  });
 }
 
 // ---------- Init ----------
 function init() {
   applyTheme(state.theme);
+  // Mobile starts with sidebar closed
+  if (isMobile()) {
+    state.sidebarOpen = false;
+    setSidebarOpen(false);
+  } else {
+    setSidebarOpen(true);
+  }
+  setAIOpen(false);
   bindEvents();
   initEditor();
+  // Lucide may load slightly after app.js — retry a few times
   refreshIcons();
+  let tries = 0;
+  const iconTimer = setInterval(() => {
+    refreshIcons();
+    tries += 1;
+    if (window.lucide || tries > 20) clearInterval(iconTimer);
+  }, 100);
   if (state.token) loadRepos();
   setStatus("Lumen ready · Set token to begin");
 }
 
 init();
+
+

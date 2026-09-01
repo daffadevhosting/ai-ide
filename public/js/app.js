@@ -21,16 +21,20 @@ function isMobile() {
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
+// ---------- Lucide Icons ----------
 function refreshIcons(root) {
   const api = window.lucide;
-  if (!api || typeof api.createIcons !== "function") return;
+  if (!api || typeof api.createIcons !== "function") {
+    console.warn('Lucide belum siap');
+    return;
+  }
   try {
     api.createIcons({
       root: root || document.body,
       attrs: { "stroke-width": 2 },
     });
-  } catch {
-    try { api.createIcons(); } catch { /* ignore */ }
+  } catch (e) {
+    console.warn('Error refreshing icons:', e);
   }
 }
 
@@ -65,8 +69,8 @@ const ui = {
       }
 
       dialog.classList.remove("hidden");
-      refreshIcons(dialog);
       setTimeout(() => {
+        refreshIcons(dialog);
         if (mode === "prompt") {
           input.focus();
           input.select();
@@ -179,6 +183,7 @@ function renderRepos() {
   const el = $("#view-repos");
   if (!state.repos.length) {
     el.innerHTML = `<div class="empty-state">No repositories found</div>`;
+    refreshIcons();
     return;
   }
   el.innerHTML = state.repos
@@ -325,6 +330,7 @@ function renderTabs() {
     el.addEventListener("click", (e) => {
       if (e.target.closest("[data-close]")) return;
       activateTab(el.dataset.id);
+      refreshIcons();
     });
   });
   list.querySelectorAll("[data-close]").forEach((btn) => {
@@ -453,6 +459,9 @@ function initEditor() {
         renderTabs();
       }
     });
+
+    // Refresh icons after editor loads
+    refreshIcons();
   });
 }
 
@@ -517,6 +526,7 @@ function addMessage(role, text, streaming = false) {
   div.innerHTML = formatMsgHtml(text);
   el.appendChild(div);
   el.scrollTop = el.scrollHeight;
+  refreshIcons();
   return div;
 }
 
@@ -535,6 +545,7 @@ function finishMessage(div, fullText) {
         if (tab) tab.dirty = true;
         renderTabs();
         setStatus("Code applied to editor");
+        refreshIcons();
       }
     };
     div.appendChild(btn);
@@ -613,6 +624,7 @@ async function sendAI() {
               fullText += chunk;
               assistantDiv.innerHTML = formatMsgHtml(fullText);
               $("#ai-messages").scrollTop = $("#ai-messages").scrollHeight;
+              refreshIcons();
             }
           } catch {
             /* ignore partial */
@@ -627,6 +639,7 @@ async function sendAI() {
     assistantDiv.classList.remove("streaming");
     assistantDiv.innerHTML = formatMsgHtml(`Error: ${e.message}`);
     setStatus("AI error");
+    refreshIcons();
   } finally {
     state.streaming = false;
   }
@@ -650,7 +663,10 @@ function setSidebarOpen(open) {
   }
   updateBackdrop();
   // Let Monaco relayout after width change
-  setTimeout(() => state.editor?.layout?.(), 220);
+  setTimeout(() => {
+    state.editor?.layout?.();
+    refreshIcons();
+  }, 220);
 }
 
 function toggleSidebar() {
@@ -665,7 +681,10 @@ function setAIOpen(open) {
     setSidebarOpen(false);
   }
   updateBackdrop();
-  setTimeout(() => state.editor?.layout?.(), 220);
+  setTimeout(() => {
+    state.editor?.layout?.();
+    refreshIcons();
+  }, 220);
 }
 
 function toggleAI() {
@@ -683,6 +702,7 @@ function closeOverlays() {
 function switchView(name) {
   $$(".sidebar-header .tab").forEach((t) => t.classList.toggle("active", t.dataset.view === name));
   $$(".view").forEach((v) => v.classList.toggle("active", v.id === `view-${name}`));
+  refreshIcons();
 }
 
 // ---------- Events ----------
@@ -704,11 +724,13 @@ function bindEvents() {
     const isPrompt = !input.classList.contains("hidden");
     if (isPrompt) ui._close(input.value);
     else ui._close(true);
+    refreshIcons();
   };
   $("#ui-dialog-cancel").onclick = () => {
     const input = $("#ui-dialog-input");
     const isPrompt = !input.classList.contains("hidden");
     ui._close(isPrompt ? null : false);
+    refreshIcons();
   };
   $("#ui-dialog").addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
@@ -727,6 +749,7 @@ function bindEvents() {
   $("#btn-refresh").onclick = () => {
     if ($(".sidebar-header .tab.active")?.dataset.view === "repos") loadRepos();
     else if (state.currentRepo) loadTree(state.currentPath);
+    refreshIcons();
   };
 
   $("#btn-use-selection").onclick = () => {
@@ -735,6 +758,7 @@ function bindEvents() {
     if (!model) return;
     const sel = model.getValueInRange(state.editor.getSelection());
     if (sel) $("#ai-input").value = ($("#ai-input").value + "\n" + sel).trim();
+    refreshIcons();
   };
 
   $("#ai-input").addEventListener("keydown", (e) => {
@@ -745,7 +769,10 @@ function bindEvents() {
   });
 
   $$(".sidebar-header .tab").forEach((t) => {
-    t.onclick = () => switchView(t.dataset.view);
+    t.onclick = () => {
+      switchView(t.dataset.view);
+      refreshIcons();
+    };
   });
 
   // Keep layout correct on rotate / resize
@@ -760,6 +787,17 @@ function bindEvents() {
       $("#backdrop")?.classList.remove("visible");
     }
     state.editor?.layout?.();
+    refreshIcons();
+  });
+
+  // Extra refresh for dynamic content
+  const observer = new MutationObserver(() => {
+    refreshIcons();
+  });
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true,
+    attributes: false,
   });
 }
 
@@ -776,18 +814,13 @@ function init() {
   setAIOpen(false);
   bindEvents();
   initEditor();
-  // Lucide may load slightly after app.js — retry a few times
-  refreshIcons();
-  let tries = 0;
-  const iconTimer = setInterval(() => {
-    refreshIcons();
-    tries += 1;
-    if (window.lucide || tries > 20) clearInterval(iconTimer);
-  }, 100);
+  
+  // Initial icon refresh
+  setTimeout(refreshIcons, 100);
+  
   if (state.token) loadRepos();
   setStatus("Lumen ready · Set token to begin");
 }
 
+// Start the app
 init();
-
-

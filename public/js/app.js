@@ -137,6 +137,8 @@ function updateAuthUI() {
   const label = $("#github-login-label");
   const btn = $("#btn-github-login");
   const welcomeBtn = $("#btn-github-login-welcome");
+  const welcomeSteps = $("#welcome-steps");
+  const welcomeConnectedMsg = $("#welcome-connected-msg");
   const connected = Boolean(state.token);
   const displayName = state.login || "Connected";
 
@@ -144,6 +146,15 @@ function updateAuthUI() {
     if (label) label.textContent = displayName;
     btn?.classList.add("connected");
     if (btn) btn.title = "Connected — click to disconnect";
+
+    // Hide onboarding steps when logged in
+    if (welcomeSteps) welcomeSteps.style.display = "none";
+    if (welcomeConnectedMsg) {
+      welcomeConnectedMsg.style.display = "";
+      welcomeConnectedMsg.textContent = state.login
+        ? `Signed in as ${state.login}. Pilih repo di sidebar untuk mulai.`
+        : "GitHub connected. Pilih repo di sidebar untuk mulai.";
+    }
 
     if (welcomeBtn) {
       welcomeBtn.classList.add("connected");
@@ -155,6 +166,13 @@ function updateAuthUI() {
     if (label) label.textContent = "Connect GitHub";
     btn?.classList.remove("connected");
     if (btn) btn.title = "Connect GitHub account";
+
+    // Show onboarding steps when logged out
+    if (welcomeSteps) welcomeSteps.style.display = "";
+    if (welcomeConnectedMsg) {
+      welcomeConnectedMsg.style.display = "none";
+      welcomeConnectedMsg.textContent = "";
+    }
 
     if (welcomeBtn) {
       welcomeBtn.classList.remove("connected");

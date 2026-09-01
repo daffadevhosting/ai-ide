@@ -3,7 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>AI IDE · Cloudflare</title>
+  <title>Lumen · AI Coding Workspace</title>
+  <meta name="description" content="Lumen — clarity for every line. AI-powered IDE with GitHub, streaming Workers AI, and multi-tab editing." />
+  <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -16,8 +18,8 @@
     <!-- Top bar -->
     <header class="topbar">
       <div class="brand">
-        <i data-lucide="boxes" class="brand-icon"></i>
-        <span>AI IDE</span>
+        <img src="/assets/logo.svg" alt="Lumen" class="brand-logo" width="22" height="22" />
+        <span>Lumen</span>
       </div>
       <div class="topbar-center">
         <span id="current-file" class="current-file">No file open</span>
@@ -70,15 +72,15 @@
 
       <!-- Editor area -->
       <section class="editor-area">
-        <!-- Multi-tab bar -->
         <div id="tab-bar" class="tab-bar">
           <div id="tabs" class="tabs-list"></div>
         </div>
         <div id="editor-container"></div>
         <div id="welcome" class="welcome">
-          <i data-lucide="sparkles" style="width:48px;height:48px;color:var(--accent);margin-bottom:12px"></i>
-          <h1>AI IDE</h1>
-          <p>Cloudflare Workers AI · GitHub powered</p>
+          <img src="/assets/logo.svg" alt="Lumen" class="welcome-logo" width="56" height="56" />
+          <h1>Lumen</h1>
+          <p class="tagline">Clarity for every line</p>
+          <p class="sub">Cloudflare Workers AI · GitHub powered</p>
           <ol>
             <li>Set your <strong>GitHub Personal Access Token</strong> (repo scope) or configure GitHub App</li>
             <li>Select a repository from the sidebar</li>
@@ -121,7 +123,7 @@
     <!-- Status bar -->
     <footer class="statusbar">
       <span id="status-left">Ready</span>
-      <span id="status-right">Workers AI · Streaming</span>
+      <span id="status-right">Lumen · Workers AI</span>
     </footer>
   </div>
 

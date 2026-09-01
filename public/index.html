@@ -12,7 +12,29 @@
   <link rel="stylesheet" href="/css/styles.css?v=20260901c" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.0/min/vs/loader.min.js"></script>
   <!-- Lucide UMD -->
-  <script src="https://cdn.jsdelivr.net/npm/lucide@latest"></script>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+<script>
+  // Tunggu hingga DOM siap dan semua elemen dirender
+  document.addEventListener('DOMContentLoaded', function() {
+    // Tunggu sedikit untuk memastikan semua elemen ada
+    setTimeout(function() {
+      if (typeof lucide !== 'undefined' && lucide.createIcons) {
+        lucide.createIcons();
+      } else {
+        console.warn('Lucide tidak ditemukan, coba muat ulang');
+      }
+    }, 100);
+  });
+
+  function refreshIcons() {
+    if (typeof lucide !== 'undefined' && lucide.createIcons) {
+      lucide.createIcons();
+    }
+  }
+
+  // Expose ke global untuk dipanggil dari app.js
+  window.refreshIcons = refreshIcons;
+</script>
 </head>
 <body>
   <div id="app">

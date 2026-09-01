@@ -23,7 +23,7 @@ const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-GitHub-Token",
 };
 
-const CODE_MODEL = "@cf/meta/llama-3.1-8b-instruct";
+const CODE_MODEL = "@cf/moonshotai/kimi-k2.7-code";
 
 // Simple in-memory cache for installation tokens (per isolate)
 let cachedInstallToken: { token: string; expiresAt: number } | null = null;

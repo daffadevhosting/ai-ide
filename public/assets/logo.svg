@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Lumen mark: geometric light / aperture -->
+  <defs>
+    <linearGradient id="g" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8aa4ff"/>
+      <stop offset="1" stop-color="#6c8cff"/>
+    </linearGradient>
+  </defs>
+  <!-- Outer ring -->
+  <circle cx="32" cy="32" r="26" stroke="url(#g)" stroke-width="3.5"/>
+  <!-- Inner diamond / light core -->
+  <path d="M32 16L44 32L32 48L20 32Z" fill="url(#g)"/>
+  <!-- Center highlight -->
+  <circle cx="32" cy="32" r="5" fill="#0f1115"/>
+  <circle cx="32" cy="32" r="2.5" fill="url(#g)"/>
+</svg>

@@ -6,29 +6,180 @@
 export interface Env {
   AI: Ai;
   ASSETS: Fetcher;
+  /** Optional KV for daily neuron usage counters */
+  USAGE?: KVNamespace;
   GITHUB_TOKEN?: string;
   GITHUB_APP_ID?: string;
   GITHUB_PRIVATE_KEY?: string;
   GITHUB_INSTALLATION_ID?: string;
-  /** OAuth App / GitHub App client credentials for "Connect GitHub" */
+  /** OAuth App / GitHub App client */
   GITHUB_CLIENT_ID?: string;
   GITHUB_CLIENT_SECRET?: string;
   ACCOUNT_ID?: string;
   CLOUDFLARE_API_TOKEN?: string;
+  /** Daily free neuron budget (default 10000) */
+  NEURON_DAILY_LIMIT?: string;
+  /** Soft lock threshold (default 9800) — AI blocked when used >= this */
+  NEURON_SOFT_LIMIT?: string;
 }
 
 const CORS_HEADERS: Record<string, string> = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": "https://lumen.backendku.workers.dev/",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-GitHub-Token",
 };
 
-// Code-optimized Moonshot model (Workers AI)
-// Note: do not pass custom temperature — Kimi K2.7 Code expects default (1.0)
-const CODE_MODEL = "@cf/moonshotai/kimi-k2.7-code";
+// Heavy model for panel AI (review / fix / create / chat)
+// Qwen2.5-Coder-32B: 32k context, LoRA yes. Pricing ~$0.66/M in, $1/M out
+const CODE_MODEL = "@cf/qwen/qwen2.5-coder-32b-instruct";
+// Light model for inline ghost-text (neuron-friendly)
+const COMPLETE_MODEL = "@cf/meta/llama-3.2-3b-instruct";
 
 // Simple in-memory cache for installation tokens (per isolate)
 let cachedInstallToken: { token: string; expiresAt: number } | null = null;
+
+// In-memory neuron day counter (per isolate fallback when KV missing)
+let memNeuronDay = "";
+let memNeuronUsed = 0;
+let memQuotaExhaustedUntil = 0; // unix ms
+
+const DEFAULT_NEURON_LIMIT = 10000;
+const DEFAULT_NEURON_SOFT = 9800;
+
+/** Rough neuron cost estimates per action (Cloudflare does not expose live remaining quota via simple API) */
+const NEURON_COST: Record<string, number> = {
+  complete: 60,
+  chat: 450,
+  review: 550,
+  fix: 550,
+  create: 550,
+};
+
+function utcDayKey(d = new Date()): string {
+  return d.toISOString().slice(0, 10); // YYYY-MM-DD UTC
+}
+
+function nextUtcMidnightMs(from = new Date()): number {
+  const n = new Date(from);
+  n.setUTCDate(n.getUTCDate() + 1);
+  n.setUTCHours(0, 0, 0, 0);
+  return n.getTime();
+}
+
+function neuronLimits(env: Env) {
+  const limit = Math.max(1, parseInt(env.NEURON_DAILY_LIMIT || "", 10) || DEFAULT_NEURON_LIMIT);
+  const soft = Math.max(1, parseInt(env.NEURON_SOFT_LIMIT || "", 10) || DEFAULT_NEURON_SOFT);
+  return { limit, soft: Math.min(soft, limit) };
+}
+
+async function getNeuronUsage(env: Env): Promise<{ used: number; day: string }> {
+  const day = utcDayKey();
+  if (env.USAGE) {
+    const raw = await env.USAGE.get(`neurons:${day}`);
+    return { used: raw ? parseInt(raw, 10) || 0 : 0, day };
+  }
+  if (memNeuronDay !== day) {
+    memNeuronDay = day;
+    memNeuronUsed = 0;
+  }
+  return { used: memNeuronUsed, day };
+}
+
+async function addNeuronUsage(env: Env, amount: number): Promise<number> {
+  const day = utcDayKey();
+  const add = Math.max(0, Math.round(amount));
+  if (env.USAGE) {
+    const key = `neurons:${day}`;
+    const prev = parseInt((await env.USAGE.get(key)) || "0", 10) || 0;
+    const next = prev + add;
+    // Expire a bit after next UTC day
+    const ttl = Math.ceil((nextUtcMidnightMs() - Date.now()) / 1000) + 3600;
+    await env.USAGE.put(key, String(next), { expirationTtl: Math.max(ttl, 3600) });
+    return next;
+  }
+  if (memNeuronDay !== day) {
+    memNeuronDay = day;
+    memNeuronUsed = 0;
+  }
+  memNeuronUsed += add;
+  return memNeuronUsed;
+}
+
+async function markQuotaExhausted(env: Env): Promise<void> {
+  const until = nextUtcMidnightMs();
+  memQuotaExhaustedUntil = until;
+  if (env.USAGE) {
+    const ttl = Math.ceil((until - Date.now()) / 1000) + 60;
+    await env.USAGE.put("quota_exhausted_until", String(until), {
+      expirationTtl: Math.max(ttl, 60),
+    });
+  }
+}
+
+async function isQuotaExhausted(env: Env): Promise<{ exhausted: boolean; until: number }> {
+  const now = Date.now();
+  if (memQuotaExhaustedUntil > now) {
+    return { exhausted: true, until: memQuotaExhaustedUntil };
+  }
+  if (env.USAGE) {
+    const raw = await env.USAGE.get("quota_exhausted_until");
+    const until = raw ? parseInt(raw, 10) || 0 : 0;
+    if (until > now) {
+      memQuotaExhaustedUntil = until;
+      return { exhausted: true, until };
+    }
+  }
+  return { exhausted: false, until: nextUtcMidnightMs() };
+}
+
+function isCfQuotaError(err: unknown): boolean {
+  const msg = String((err as any)?.message || err || "").toLowerCase();
+  return (
+    msg.includes("10,000 neurons") ||
+    msg.includes("10000 neurons") ||
+    msg.includes("daily free allocation") ||
+    msg.includes("used up your daily") ||
+    msg.includes("quota") && msg.includes("neuron") ||
+    msg.includes("3036") ||
+    msg.includes("4006")
+  );
+}
+
+async function buildQuotaStatus(env: Env) {
+  const { limit, soft } = neuronLimits(env);
+  const { used, day } = await getNeuronUsage(env);
+  const flag = await isQuotaExhausted(env);
+  const remaining = Math.max(0, limit - used);
+  const blocked = flag.exhausted || used >= soft;
+  const resetAt = flag.exhausted ? flag.until : nextUtcMidnightMs();
+  return {
+    day,
+    used,
+    limit,
+    softLimit: soft,
+    remaining,
+    blocked,
+    reason: flag.exhausted
+      ? "cloudflare_quota"
+      : used >= soft
+        ? "soft_limit"
+        : null,
+    resetAt, // unix ms UTC midnight (or exhausted-until)
+    resetAtISO: new Date(resetAt).toISOString(),
+    tracking: env.USAGE ? "kv" : "memory",
+  };
+}
+
+function quotaBlockedResponse(status: Awaited<ReturnType<typeof buildQuotaStatus>>) {
+  return json(
+    {
+      error: "AI quota exhausted for today. Service resumes at next UTC midnight.",
+      code: "NEURON_QUOTA",
+      quota: status,
+    },
+    429
+  );
+}
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -117,7 +268,7 @@ async function getInstallationToken(env: Env): Promise<string | null> {
         Accept: "application/vnd.github+json",
         Authorization: `Bearer ${jwt}`,
         "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "AI-IDE-Cloudflare-Worker",
+        "User-Agent": "LUMEN-AI-IDE-Cloudflare-Worker",
       },
     }
   );
@@ -170,18 +321,89 @@ async function githubFetch(path: string, token: string, options: RequestInit = {
 
 // ---------- AI ----------
 
+function extractAIText(result: unknown): string {
+  if (typeof result === "string") return result;
+  if (result && typeof result === "object") {
+    const r = result as Record<string, unknown>;
+    const text = String(r.response ?? r.content ?? r.result ?? "");
+    if (text) return text;
+    if (r.reasoning) return String(r.reasoning);
+  }
+  return String(result ?? "");
+}
+
+function cleanCompletion(raw: string): string {
+  let t = raw.trim();
+  // Strip accidental markdown fences
+  const fence = t.match(/^```(?:\w*)\n?([\s\S]*?)```/);
+  if (fence) t = fence[1].trimEnd();
+  // Model sometimes echoes prompt labels
+  t = t.replace(/^```[\w]*\n?/, "").replace(/\n?```$/, "");
+  return t;
+}
+
 async function handleAI(request: Request, env: Env): Promise<Response> {
   const body = (await request.json()) as {
-    action: "review" | "fix" | "create" | "chat";
+    action: "review" | "fix" | "create" | "chat" | "complete";
     code?: string;
     language?: string;
     prompt?: string;
     filename?: string;
     context?: string;
+    prefix?: string;
+    suffix?: string;
     stream?: boolean;
   };
 
-  // Prompts tuned for a code-specialized model (Kimi K2.7 Code)
+  // Soft / hard neuron gate (estimate + Cloudflare exhausted flag)
+  const quota = await buildQuotaStatus(env);
+  if (quota.blocked) {
+    return quotaBlockedResponse(quota);
+  }
+
+  const cost = NEURON_COST[body.action] || NEURON_COST.chat;
+
+  // ----- Inline completion (light model, non-streaming) -----
+  if (body.action === "complete") {
+    const language = body.language || "plaintext";
+    const prefix = body.prefix ?? body.code ?? "";
+    const suffix = body.suffix ?? "";
+    const filename = body.filename || "file";
+
+    const messages = [
+      {
+        role: "system",
+        content: `You are a code completion engine inside an IDE.
+Continue the code at the cursor. Output ONLY the completion text to insert — no markdown fences, no explanations, no quotes.
+Match indentation and style of the existing code. Keep the completion short (1–12 lines) unless a longer block is clearly needed.
+Language: ${language}. File: ${filename}.`,
+      },
+      {
+        role: "user",
+        content: `PREFIX (code before cursor):\n\`\`\`${language}\n${prefix.slice(-4000)}\n\`\`\`\n\nSUFFIX (code after cursor):\n\`\`\`${language}\n${suffix.slice(0, 1500)}\n\`\`\`\n\nWrite only the code that should be inserted at the cursor.`,
+      },
+    ];
+
+    try {
+      const result = await env.AI.run(COMPLETE_MODEL as any, {
+        messages,
+        stream: false,
+        max_tokens: 256,
+        temperature: 0.2,
+      });
+      await addNeuronUsage(env, cost);
+      const text = cleanCompletion(extractAIText(result));
+      return json({ result: text, model: COMPLETE_MODEL, quota: await buildQuotaStatus(env) });
+    } catch (e: any) {
+      if (isCfQuotaError(e)) {
+        await markQuotaExhausted(env);
+        return quotaBlockedResponse(await buildQuotaStatus(env));
+      }
+      return error(`AI complete error: ${e.message}`, 500);
+    }
+  }
+
+  // ----- Panel AI (heavy model) -----
   const systemPrompts: Record<string, string> = {
     review: `You are Lumen, an expert code reviewer inside an IDE.
 Review the code for correctness, bugs, security issues, performance, edge cases, and maintainability.
@@ -203,7 +425,7 @@ Rules:
 - Include necessary imports and brief comments only where helpful.
 - Return the main deliverable in a markdown fenced code block with a language tag.
 - If multiple files are needed, use separate fenced blocks and label each with a filename comment on the first line.`,
-    chat: `You are Lumen, an expert AI coding assistant embedded in an IDE (Kimi K2.7 Code).
+    chat: `You are Lumen, an expert AI coding assistant embedded in an IDE (Qwen2.5-Coder-32B).
 Help with coding, debugging, refactors, explanations, and architecture.
 When you output code, use markdown fenced blocks with language tags.
 Be accurate, concise, and practical.`,
@@ -225,7 +447,6 @@ Be accurate, concise, and practical.`,
 
   const wantStream = body.stream !== false;
 
-  // Kimi K2.7 Code: messages + stream are supported; avoid non-default temperature
   const inferenceInput: Record<string, unknown> = {
     messages,
     max_tokens: 8192,
@@ -237,12 +458,14 @@ Be accurate, concise, and practical.`,
         ...inferenceInput,
         stream: true,
       });
+      await addNeuronUsage(env, cost);
 
       return new Response(stream as ReadableStream, {
         headers: {
           "Content-Type": "text/event-stream",
           "Cache-Control": "no-cache",
           Connection: "keep-alive",
+          "X-Neuron-Cost": String(cost),
           ...CORS_HEADERS,
         },
       });
@@ -252,21 +475,18 @@ Be accurate, concise, and practical.`,
       ...inferenceInput,
       stream: false,
     });
+    await addNeuronUsage(env, cost);
 
-    // Workers AI may return { response } and/or reasoning fields depending on model
-    let text = "";
-    if (typeof result === "string") {
-      text = result;
-    } else if (result && typeof result === "object") {
-      const r = result as Record<string, unknown>;
-      text = String(r.response ?? r.content ?? r.result ?? "");
-      if (!text && r.reasoning) text = String(r.reasoning);
-    } else {
-      text = String(result ?? "");
-    }
-
-    return json({ result: text, model: CODE_MODEL });
+    return json({
+      result: extractAIText(result),
+      model: CODE_MODEL,
+      quota: await buildQuotaStatus(env),
+    });
   } catch (e: any) {
+    if (isCfQuotaError(e)) {
+      await markQuotaExhausted(env);
+      return quotaBlockedResponse(await buildQuotaStatus(env));
+    }
     return error(`AI error: ${e.message}`, 500);
   }
 }
@@ -608,7 +828,7 @@ export default {
       if (path === "/api/version" && request.method === "GET") {
         return json({
           name: "Lumen",
-          version: "2026.09.01-h",
+          version: "2026.09.01-j",
           features: [
             "streaming-ai",
             "multi-tab",
@@ -616,9 +836,15 @@ export default {
             "github-oauth",
             "ui-dialogs",
             "collapsible-panels",
+            "inline-complete",
+            "neuron-quota-gate",
           ],
           oauthConfigured: Boolean(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET),
         });
+      }
+
+      if (path === "/api/quota" && request.method === "GET") {
+        return json(await buildQuotaStatus(env));
       }
 
       // ----- GitHub OAuth (Connect account) -----

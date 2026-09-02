@@ -144,7 +144,7 @@ function formatNeuronStatus(q) {
   const used = Math.round(q.used);
   const limit = q.limit || 10000;
   const rem = Math.max(0, limit - used);
-  const limitLabel = limit >= 1000 ? `${Math.round(limit / 1000)}k` : String(limit);
+  const limitLabel = limit >= 1000 ? `${Math.round(limit / 1000)}000 neurons` : String(limit);
   // Compact: "⚡ 380/10k" — show remaining when low
   if (q.blocked) return `⚡ ${used}/${limitLabel} · locked`;
   if (rem <= limit * 0.15) return `⚡ ${used}/${limitLabel} · low`;
@@ -346,8 +346,8 @@ async function loadRepos() {
   if (!state.token) {
     $("#view-repos").innerHTML = `
       <div class="empty-state">
-        <i class="fa-solid fa-key" style="font-size:28px;opacity:.4;margin-bottom:8px"></i>
-        <div>Set GitHub token to load repos</div>
+        <i class="fa-brands fa-github" style="font-size:28px;opacity:.4;margin-bottom:8px"></i>
+        <div>Login GitHub to load repos</div>
       </div>`;
     return;
   }

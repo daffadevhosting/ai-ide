@@ -214,19 +214,58 @@ function updateAuthUI() {
   }
 }
 
+/** Clear GitHub session (no confirm). Used by manual disconnect + quota lock. */
+function forceLogoutGitHub(reason) {
+  const wasConnected = Boolean(state.token);
+  state.token = "";
+  state.login = "";
+  localStorage.removeItem("gh_token");
+  localStorage.removeItem("gh_login");
+  state.repos = [];
+  state.currentRepo = null;
+  state.currentPath = "";
+  // Close all editor tabs cleanly
+  state.tabs.forEach((t) => {
+    if (t.model && !t.model.isDisposed?.()) {
+      try {
+        t.model.dispose();
+      } catch {
+        /* ignore */
+      }
+    }
+  });
+  state.tabs = [];
+  state.activeTabId = null;
+  if (state.editor) {
+    try {
+      state.editor.setModel(null);
+    } catch {
+      /* ignore */
+    }
+  }
+  $("#editor-container")?.classList.remove("visible");
+  const welcome = $("#welcome");
+  if (welcome) welcome.style.display = "flex";
+  const fileLabel = $("#current-file");
+  if (fileLabel) fileLabel.textContent = "";
+  renderTabs();
+  renderRepos();
+  const tree = $("#file-tree");
+  if (tree) tree.innerHTML = "";
+  const crumb = $("#breadcrumb");
+  if (crumb) crumb.innerHTML = "";
+  updateAuthUI();
+  if (wasConnected) {
+    setStatus(reason || "Disconnected from GitHub");
+  }
+}
+
 function connectGitHub() {
   if (state.token) {
     // Already connected → disconnect
     ui.confirm("Disconnect GitHub account from Lumen?", "Disconnect").then((ok) => {
       if (!ok) return;
-      state.token = "";
-      state.login = "";
-      localStorage.removeItem("gh_token");
-      localStorage.removeItem("gh_login");
-      state.repos = [];
-      renderRepos();
-      updateAuthUI();
-      setStatus("Disconnected from GitHub");
+      forceLogoutGitHub("Disconnected from GitHub");
     });
     return;
   }
@@ -1298,11 +1337,19 @@ function formatHMS(ms) {
   return [h, m, sec].map((n) => String(n).padStart(2, "0")).join(":");
 }
 
+// Track whether we already forced logout for this lock session (avoid repeat)
+let quotaLogoutDone = false;
+
 function setQuotaLock(show, quota) {
   const el = $("#quota-lock");
   if (!el) return;
   el.classList.toggle("hidden", !show);
-  if (!show) return;
+
+  if (!show) {
+    // Unlocked — allow logout again on next lock
+    quotaLogoutDone = false;
+    return;
+  }
 
   lastQuota = quota || lastQuota;
   const resetAt = lastQuota?.resetAt || 0;
@@ -1333,6 +1380,12 @@ function setQuotaLock(show, quota) {
     state._inlineWasOn = true;
     state.inlineSuggest = false;
     updateInlineToggleUI();
+  }
+
+  // Global neuron exhausted → force logout active GitHub session (once per lock)
+  if (!quotaLogoutDone) {
+    quotaLogoutDone = true;
+    forceLogoutGitHub("Logged out · daily neuron quota reached");
   }
 }
 

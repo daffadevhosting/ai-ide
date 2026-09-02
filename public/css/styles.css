@@ -926,7 +926,7 @@ select option {
 .ui-dialog-icon:empty { display: none; }
 .ui-dialog-content { text-align: center; }
 .ui-dialog-content h2 { justify-content: center; }
-.ui-dialog-content .modal-actions { justify-content: center; }
+.ui-dialog-content .modal-actions { justify-content: flex-end; }
 .ui-dialog-content #ui-dialog-input { text-align: left; }
 
 ::-webkit-scrollbar { width: 8px; height: 8px; }

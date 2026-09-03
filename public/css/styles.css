@@ -108,10 +108,11 @@ html, body {
 }
 
 .topbar-center {
-  flex: 1;
-  text-align: center;
-  overflow: hidden;
-  min-width: 0;
+    flex: 1;
+    text-align: start;
+    overflow: hidden;
+    min-width: 0;
+    margin-left: 150px;
 }
 
 .current-file {
@@ -212,7 +213,7 @@ html, body {
   pointer-events: auto;
 }
 
-/* Sidebar â desktop collapsible */
+/* Sidebar Ã¢ÂÂ desktop collapsible */
 .sidebar {
   width: var(--sidebar-w);
   background: var(--bg-elevated);
@@ -405,7 +406,7 @@ html, body {
   color: var(--danger);
 }
 .editor-tab.dirty .tab-name::after {
-  content: " â¢";
+  content: " Ã¢ÂÂ¢";
   color: var(--accent);
 }
 
@@ -456,7 +457,7 @@ html, body {
 }
 .welcome strong { color: var(--text); }
 
-/* AI Panel â desktop collapsible */
+/* AI Panel Ã¢ÂÂ desktop collapsible */
 .ai-panel {
   width: 0;
   background: var(--bg-elevated);
@@ -538,7 +539,7 @@ html, body {
   align-self: flex-start;
 }
 .msg.streaming::after {
-  content: "â";
+  content: "Ã¢ÂÂ";
   animation: blink 0.8s infinite;
   color: var(--accent);
 }
@@ -779,12 +780,12 @@ html, body {
   .btn-label .label { display: none; }
   .btn-label { padding: 6px 8px; }
 
-  /* Theme always visible â icon only is fine */
+  /* Theme always visible Ã¢ÂÂ icon only is fine */
   #btn-theme { display: flex; }
 }
 
 @media (max-width: 400px) {
-  .topbar-actions .btn.ghost { display: none; } /* hide Token text btn, keep via menu later if needed â actually keep token as icon */
+  .topbar-actions .btn.ghost { display: none; } /* hide Token text btn, keep via menu later if needed Ã¢ÂÂ actually keep token as icon */
   #btn-token .label { display: none; }
   #btn-token { padding: 6px 8px; }
 }

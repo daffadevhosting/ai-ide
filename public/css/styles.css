@@ -212,7 +212,7 @@ html, body {
   pointer-events: auto;
 }
 
-/* Sidebar — desktop collapsible */
+/* Sidebar â desktop collapsible */
 .sidebar {
   width: var(--sidebar-w);
   background: var(--bg-elevated);
@@ -405,7 +405,7 @@ html, body {
   color: var(--danger);
 }
 .editor-tab.dirty .tab-name::after {
-  content: " •";
+  content: " â¢";
   color: var(--accent);
 }
 
@@ -456,7 +456,7 @@ html, body {
 }
 .welcome strong { color: var(--text); }
 
-/* AI Panel — desktop collapsible */
+/* AI Panel â desktop collapsible */
 .ai-panel {
   width: 0;
   background: var(--bg-elevated);
@@ -538,7 +538,7 @@ html, body {
   align-self: flex-start;
 }
 .msg.streaming::after {
-  content: "▋";
+  content: "â";
   animation: blink 0.8s infinite;
   color: var(--accent);
 }
@@ -779,12 +779,12 @@ html, body {
   .btn-label .label { display: none; }
   .btn-label { padding: 6px 8px; }
 
-  /* Theme always visible — icon only is fine */
+  /* Theme always visible â icon only is fine */
   #btn-theme { display: flex; }
 }
 
 @media (max-width: 400px) {
-  .topbar-actions .btn.ghost { display: none; } /* hide Token text btn, keep via menu later if needed — actually keep token as icon */
+  .topbar-actions .btn.ghost { display: none; } /* hide Token text btn, keep via menu later if needed â actually keep token as icon */
   #btn-token .label { display: none; }
   #btn-token { padding: 6px 8px; }
 }
@@ -1067,7 +1067,7 @@ select option {
 .ui-dialog-icon:empty { display: none; }
 .ui-dialog-content { text-align: center; }
 .ui-dialog-content h2 { justify-content: center; }
-.ui-dialog-content .modal-actions { justify-content: center; }
+.ui-dialog-content .modal-actions { justify-content: flex-end; }
 .ui-dialog-content #ui-dialog-input { text-align: left; }
 
 ::-webkit-scrollbar-track { background: transparent; }
@@ -1208,7 +1208,7 @@ select option {
 .ui-dialog-icon:empty { display: none; }
 .ui-dialog-content { text-align: center; }
 .ui-dialog-content h2 { justify-content: center; }
-.ui-dialog-content .modal-actions { justify-content: center; }
+.ui-dialog-content .modal-actions { justify-content: flex-end; }
 .ui-dialog-content #ui-dialog-input { text-align: left; }
 
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
@@ -1349,7 +1349,7 @@ select option {
 .ui-dialog-icon:empty { display: none; }
 .ui-dialog-content { text-align: center; }
 .ui-dialog-content h2 { justify-content: center; }
-.ui-dialog-content .modal-actions { justify-content: center; }
+.ui-dialog-content .modal-actions { justify-content: flex-end; }
 .ui-dialog-content #ui-dialog-input { text-align: left; }
 
 ::-webkit-scrollbar-thumb:hover { background: #3a4252; }
@@ -1490,7 +1490,7 @@ select option {
 .ui-dialog-icon:empty { display: none; }
 .ui-dialog-content { text-align: center; }
 .ui-dialog-content h2 { justify-content: center; }
-.ui-dialog-content .modal-actions { justify-content: center; }
+.ui-dialog-content .modal-actions { justify-content: flex-end; }
 .ui-dialog-content #ui-dialog-input { text-align: left; }
 
 ::-webkit-scrollbar-thumb:hover { background: #b0b8c4; }

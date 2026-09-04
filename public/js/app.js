@@ -201,7 +201,7 @@ function updateAuthUI() {
     if (welcomeConnectedMsg) {
       welcomeConnectedMsg.style.display = "";
       welcomeConnectedMsg.textContent = state.login
-        ? `Signed in as ${state.login}. Pilih repo di sidebar untuk mulai.`
+        ? `Signed in as ${state.login}.\nPilih repo di sidebar untuk mulai.`
         : "GitHub connected. Pilih repo di sidebar untuk mulai.";
     }
 
@@ -1108,7 +1108,7 @@ function showDiff() {
     state.diffEditor = monaco.editor.createDiffEditor($("#diff-editor-container"), {
       theme: state.theme === "dark" ? "vs-dark" : "vs",
       automaticLayout: true,
-      fontSize: 13,
+      fontSize: 14,
       fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
       minimap: { enabled: false },
       wordWrap: "on",

@@ -144,7 +144,7 @@ function formatNeuronStatus(q) {
   const used = Math.round(q.used);
   const limit = q.limit || 10000;
   const rem = Math.max(0, limit - used);
-  const limitLabel = limit >= 1000 ? `${Math.round(limit / 1000)}000 neurons` : String(limit);
+  const limitLabel = limit >= 1000 ? `${Math.round(limit / 1000)}K neurons` : String(limit);
   // Compact: "⚡ 380/10k" — show remaining when low
   if (q.blocked) return `⚡ ${used}/${limitLabel} · locked`;
   if (rem <= limit * 0.15) return `⚡ ${used}/${limitLabel} · low`;

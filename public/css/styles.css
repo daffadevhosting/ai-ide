@@ -409,6 +409,10 @@ html, body {
   content: " •";
   color: var(--accent);
 }
+.editor-tab.pending:not(.dirty) .tab-name::after {
+  content: " ↑";
+  color: var(--success);
+}
 
 #editor-container {
   flex: 1;
@@ -417,6 +421,43 @@ html, body {
   display: none;
 }
 #editor-container.visible { display: block; }
+
+/* Full-workspace split diff */
+.diff-modal {
+  position: fixed;
+  inset: var(--topbar-h) 0 var(--status-h);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  z-index: 35;
+}
+.diff-modal.hidden { display: none; }
+.diff-header {
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px 0 16px;
+  flex-shrink: 0;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+}
+.diff-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.diff-title span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.diff-actions { display: flex; align-items: center; }
+.diff-editor-container { flex: 1; min-height: 0; }
 
 .welcome {
   position: absolute;
@@ -698,6 +739,42 @@ html, body {
   justify-content: flex-end;
   gap: 8px;
 }
+.commit-modal-content { width: min(560px, 92vw); }
+.commit-modal-files {
+  font-family: var(--mono);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.commit-message-input {
+  width: 100%;
+  min-height: 76px;
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  resize: vertical;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  outline: none;
+}
+.commit-message-input:focus { border-color: var(--accent); }
+.commit-ai-row {
+  min-height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.commit-ai-status {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.commit-ai-row .btn:disabled { opacity: 0.55; cursor: wait; }
 
 /* ========== Mobile / tablet ========== */
 @media (max-width: 900px) {
@@ -731,6 +808,9 @@ html, body {
 }
 
 @media (max-width: 768px) {
+  .diff-modal { inset: var(--topbar-h) 0 0; }
+  .diff-header { padding-left: 10px; }
+
   /* Sidebar as full-height drawer */
   .sidebar {
     position: absolute;

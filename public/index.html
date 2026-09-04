@@ -56,7 +56,13 @@
         <button id="btn-token" class="btn ghost btn-label" title="Set token manually (PAT)">
           <i class="fa-solid fa-key"></i> <span class="label">Token</span>
         </button>
-        <button id="btn-save" class="btn primary btn-label" title="Commit & Push">
+        <button id="btn-save-file" class="btn ghost btn-label" title="Save file locally (Ctrl/Cmd+S)">
+          <i class="fa-solid fa-floppy-disk"></i> <span class="label">Save</span>
+        </button>
+        <button id="btn-diff" class="btn ghost btn-label" title="Compare with GitHub version">
+          <i class="fa-solid fa-code-compare"></i> <span class="label">Diff</span>
+        </button>
+        <button id="btn-save" class="btn primary btn-label" title="Commit saved changes & Push">
           <i class="fa-solid fa-code-commit"></i> <span class="label">Commit</span>
         </button>
         <button id="btn-inline-toggle" class="btn ghost btn-label" title="Toggle inline AI suggestions">
@@ -174,6 +180,17 @@
     </footer>
   </div>
 
+  <!-- Diff view -->
+  <div id="diff-modal" class="diff-modal hidden" role="dialog" aria-modal="true" aria-label="Compare changes">
+    <div class="diff-header">
+      <div class="diff-title"><i class="fa-solid fa-code-compare"></i> <span id="diff-file-name">Diff</span></div>
+      <div class="diff-actions">
+        <button id="btn-close-diff" class="icon-btn" title="Close diff"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+    </div>
+    <div id="diff-editor-container" class="diff-editor-container"></div>
+  </div>
+
   <!-- Token Modal -->
   <div id="token-modal" class="modal hidden">
     <div class="modal-content">
@@ -191,6 +208,24 @@
   </div>
 
   <!-- Custom alert / confirm / prompt -->
+  <div id="commit-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="commit-modal-title">
+    <div class="modal-content commit-modal-content">
+      <h2 id="commit-modal-title"><i class="fa-solid fa-code-commit"></i> Commit changes</h2>
+      <p id="commit-modal-files" class="commit-modal-files"></p>
+      <textarea id="commit-message-input" class="commit-message-input" rows="3" placeholder="Write a commit message..."></textarea>
+      <div class="commit-ai-row">
+        <span id="commit-ai-status" class="commit-ai-status"></span>
+        <button id="btn-generate-commit" class="btn accent sm" type="button">
+          <i class="fa-solid fa-wand-magic-sparkles"></i> Generate with AI
+        </button>
+      </div>
+      <div class="modal-actions">
+        <button id="btn-cancel-commit" class="btn ghost" type="button">Cancel</button>
+        <button id="btn-confirm-commit" class="btn primary" type="button">Commit</button>
+      </div>
+    </div>
+  </div>
+
   <div id="ui-dialog" class="modal hidden" role="dialog" aria-modal="true">
     <div class="modal-content ui-dialog-content">
       <div class="ui-dialog-icon" id="ui-dialog-icon"></div>

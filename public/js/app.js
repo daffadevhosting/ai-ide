@@ -10,6 +10,7 @@ const state = {
   tabs: [], // { id, path, sha, content, language, dirty, model? }
   activeTabId: null,
   editor: null,
+  diffEditor: null,
   sidebarOpen: true,  // desktop default open; mobile starts closed via CSS
   aiOpen: false,
   streaming: false,
@@ -116,6 +117,9 @@ function applyTheme(theme) {
     el.className = theme === "dark" ? "fa-solid fa-sun" : "fa-solid fa-moon";
   }
   if (window.monaco && state.editor) {
+    monaco.editor.setTheme(theme === "dark" ? "vs-dark" : "vs");
+  }
+  if (window.monaco && state.diffEditor) {
     monaco.editor.setTheme(theme === "dark" ? "vs-dark" : "vs");
   }
 }
@@ -502,7 +506,7 @@ function renderTabs() {
   list.innerHTML = state.tabs
     .map(
       (t) => `
-    <div class="editor-tab ${t.id === state.activeTabId ? "active" : ""} ${t.dirty ? "dirty" : ""}"
+    <div class="editor-tab ${t.id === state.activeTabId ? "active" : ""} ${t.dirty ? "dirty" : ""} ${t.savedContent !== t.remoteContent ? "pending" : ""}"
          data-id="${t.id}">
       <span class="tab-name">${t.path.split("/").pop()}</span>
       <span class="tab-close" data-close="${t.id}" title="Close">
@@ -600,6 +604,8 @@ async function openFile(path, sha) {
       path,
       sha: data.sha,
       content,
+      remoteContent: content,
+      savedContent: content,
       language,
       dirty: false,
       model: null,
@@ -812,38 +818,171 @@ function initEditor() {
 }
 
 async function commitFile() {
+  const activeTab = getActiveTab();
+  if (!activeTab || !state.editor) {
+    setStatus("No file open");
+    return;
+  }
+  activeTab.content = state.editor.getValue();
+  if (activeTab.dirty) {
+    await ui.alert(`Save "${activeTab.path}" before committing.`, "Unsaved changes");
+    return;
+  }
+
+  const pendingTabs = state.tabs.filter((tab) => tab.savedContent !== tab.remoteContent);
+  if (!pendingTabs.length) {
+    setStatus("No saved changes to commit");
+    return;
+  }
+
+  const message = await openCommitDialog(pendingTabs);
+  if (message === null || message === "") return;
+
+  setStatus(`Committing ${pendingTabs.length} file${pendingTabs.length === 1 ? "" : "s"}...`);
+  try {
+    for (const tab of pendingTabs) {
+      const result = await api("/api/commit", {
+        method: "POST",
+        body: JSON.stringify({
+          owner: tab.owner,
+          repo: tab.repo,
+          path: tab.path,
+          content: tab.savedContent,
+          message,
+          branch: tab.branch,
+          sha: tab.sha,
+        }),
+      });
+      tab.remoteContent = tab.savedContent;
+      tab.content = tab.savedContent;
+      tab.sha = result.content?.sha || tab.sha;
+    }
+    renderTabs();
+    setStatus(`Committed ${pendingTabs.length} file${pendingTabs.length === 1 ? "" : "s"} successfully`);
+  } catch (e) {
+    setStatus(`Commit failed: ${e.message}`);
+    await ui.alert("Commit failed: " + e.message, "Commit error");
+  }
+}
+
+let commitDialogResolve = null;
+
+function openCommitDialog(pendingTabs) {
+  return new Promise((resolve) => {
+    commitDialogResolve = resolve;
+    const modal = $("#commit-modal");
+    const input = $("#commit-message-input");
+    const files = $("#commit-modal-files");
+    const status = $("#commit-ai-status");
+    input.value = `Update ${pendingTabs.length} file${pendingTabs.length === 1 ? "" : "s"}`;
+    files.textContent = pendingTabs.map((tab) => tab.path).join(" · ");
+    status.textContent = "";
+    modal.classList.remove("hidden");
+    setTimeout(() => {
+      input.focus();
+      input.select();
+    }, 30);
+  });
+}
+
+function closeCommitDialog(message) {
+  $("#commit-modal")?.classList.add("hidden");
+  const resolve = commitDialogResolve;
+  commitDialogResolve = null;
+  if (resolve) resolve(message);
+}
+
+async function generateCommitMessage() {
+  const pendingTabs = state.tabs.filter((tab) => tab.savedContent !== tab.remoteContent);
+  if (!pendingTabs.length) return;
+  const button = $("#btn-generate-commit");
+  const status = $("#commit-ai-status");
+  const diffContext = pendingTabs
+    .map((tab) => {
+      const before = tab.remoteContent.slice(0, 5000);
+      const after = tab.savedContent.slice(0, 5000);
+      return `FILE: ${tab.path}\nBEFORE:\n${before}\nAFTER:\n${after}`;
+    })
+    .join("\n\n")
+    .slice(0, 24000);
+
+  button.disabled = true;
+  status.textContent = "Generating...";
+  try {
+    const data = await api("/api/ai", {
+      method: "POST",
+      body: JSON.stringify({
+        action: "chat",
+        stream: false,
+        prompt: "Generate one concise Git commit message for these changes. Use imperative mood, English, and a conventional type prefix when appropriate (feat:, fix:, refactor:, docs:, chore:). Output ONLY the commit message on one line, maximum 72 characters. Do not use quotes, markdown, or a period at the end.",
+        context: diffContext,
+      }),
+    });
+    if (data.quota) updateNeuronBar(data.quota);
+    const generated = String(data.result || "").replace(/[\r\n]+/g, " ").trim().replace(/^['"]|['"]$/g, "");
+    if (!generated) throw new Error("AI returned an empty message");
+    $("#commit-message-input").value = generated.slice(0, 72);
+    status.textContent = "Generated";
+  } catch (e) {
+    status.textContent = "Generation failed";
+    await ui.alert(`Could not generate commit message: ${e.message}`, "Commit message AI");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function saveCurrentFile() {
   const tab = getActiveTab();
   if (!tab || !state.editor) {
     setStatus("No file open");
     return;
   }
-  const content = state.editor.getValue();
-  const message = await ui.prompt("Commit message:", `Update ${tab.path}`, "Commit");
-  if (message === null || message === "") return;
-
-  setStatus("Committing...");
-  try {
-    const result = await api("/api/commit", {
-      method: "POST",
-      body: JSON.stringify({
-        owner: tab.owner,
-        repo: tab.repo,
-        path: tab.path,
-        content,
-        message,
-        branch: tab.branch,
-        sha: tab.sha,
-      }),
-    });
-    tab.content = content;
-    tab.dirty = false;
-    tab.sha = result.content?.sha || tab.sha;
-    renderTabs();
-    setStatus("Committed successfully ✓");
-  } catch (e) {
-    setStatus(`Commit failed: ${e.message}`);
-    await ui.alert("Commit failed: " + e.message, "Commit error");
+  tab.content = state.editor.getValue();
+  if (!tab.dirty) {
+    setStatus(`${tab.path} is already saved`);
+    return;
   }
+  tab.savedContent = tab.content;
+  tab.dirty = false;
+  renderTabs();
+  setStatus(`Saved ${tab.path} locally`);
+}
+
+function closeDiff() {
+  $("#diff-modal")?.classList.add("hidden");
+  if (state.diffEditor) state.diffEditor.layout();
+}
+
+function showDiff() {
+  const tab = getActiveTab();
+  if (!tab || !state.editor || !window.monaco) {
+    setStatus("No file open");
+    return;
+  }
+  tab.content = state.editor.getValue();
+  const original = monaco.editor.createModel(tab.remoteContent, tab.language);
+  const modified = monaco.editor.createModel(tab.content, tab.language);
+  if (!state.diffEditor) {
+    state.diffEditor = monaco.editor.createDiffEditor($("#diff-editor-container"), {
+      theme: state.theme === "dark" ? "vs-dark" : "vs",
+      automaticLayout: true,
+      fontSize: 13,
+      fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+      minimap: { enabled: false },
+      wordWrap: "on",
+      scrollBeyondLastLine: false,
+      renderSideBySide: true,
+      originalEditable: false,
+    });
+  }
+  const previous = state.diffEditor.getModel();
+  if (previous) {
+    previous.original.dispose();
+    previous.modified.dispose();
+  }
+  state.diffEditor.setModel({ original, modified });
+  $("#diff-file-name").textContent = tab.path;
+  $("#diff-modal").classList.remove("hidden");
 }
 
 // ---------- Streaming AI ----------
@@ -1233,7 +1372,21 @@ function bindEvents() {
   $("#btn-token").onclick = openTokenModal;
   $("#btn-cancel-token").onclick = closeTokenModal;
   $("#btn-save-token").onclick = saveToken;
+  $("#btn-save-file").onclick = saveCurrentFile;
+  $("#btn-diff").onclick = showDiff;
+  $("#btn-close-diff").onclick = closeDiff;
   $("#btn-save").onclick = commitFile;
+  $("#btn-generate-commit").onclick = generateCommitMessage;
+  $("#btn-cancel-commit").onclick = () => closeCommitDialog(null);
+  $("#btn-confirm-commit").onclick = () => closeCommitDialog($("#commit-message-input").value.trim());
+  $("#commit-modal").addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      closeCommitDialog(null);
+    } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      closeCommitDialog($("#commit-message-input").value.trim());
+    }
+  });
   $("#btn-inline-toggle") && ($("#btn-inline-toggle").onclick = toggleInlineSuggest);
   $("#btn-ai-toggle").onclick = toggleAI;
   $("#btn-close-ai").onclick = () => setAIOpen(false);
@@ -1326,6 +1479,16 @@ function bindEvents() {
       $("#backdrop")?.classList.remove("visible");
     }
     state.editor?.layout?.();
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+      e.preventDefault();
+      saveCurrentFile();
+    }
+    if (e.key === "Escape" && !$("#diff-modal")?.classList.contains("hidden")) {
+      closeDiff();
+    }
   });
 }
 

@@ -213,7 +213,7 @@ html, body {
   pointer-events: auto;
 }
 
-/* Sidebar Ã¢ÂÂ desktop collapsible */
+/* Sidebar — desktop collapsible */
 .sidebar {
   width: var(--sidebar-w);
   background: var(--bg-elevated);
@@ -406,7 +406,7 @@ html, body {
   color: var(--danger);
 }
 .editor-tab.dirty .tab-name::after {
-  content: " Ã¢ÂÂ¢";
+  content: " •";
   color: var(--accent);
 }
 
@@ -457,7 +457,7 @@ html, body {
 }
 .welcome strong { color: var(--text); }
 
-/* AI Panel Ã¢ÂÂ desktop collapsible */
+/* AI Panel — desktop collapsible */
 .ai-panel {
   width: 0;
   background: var(--bg-elevated);
@@ -539,7 +539,7 @@ html, body {
   align-self: flex-start;
 }
 .msg.streaming::after {
-  content: "Ã¢ÂÂ";
+  content: "▋";
   animation: blink 0.8s infinite;
   color: var(--accent);
 }
@@ -780,12 +780,12 @@ html, body {
   .btn-label .label { display: none; }
   .btn-label { padding: 6px 8px; }
 
-  /* Theme always visible Ã¢ÂÂ icon only is fine */
+  /* Theme always visible — icon only is fine */
   #btn-theme { display: flex; }
 }
 
 @media (max-width: 400px) {
-  .topbar-actions .btn.ghost { display: none; } /* hide Token text btn, keep via menu later if needed Ã¢ÂÂ actually keep token as icon */
+  .topbar-actions .btn.ghost { display: none; } /* hide Token text btn, keep via menu later if needed — actually keep token as icon */
   #btn-token .label { display: none; }
   #btn-token { padding: 6px 8px; }
 }

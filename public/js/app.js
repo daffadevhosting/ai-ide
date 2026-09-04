@@ -201,7 +201,7 @@ function updateAuthUI() {
     if (welcomeConnectedMsg) {
       welcomeConnectedMsg.style.display = "";
       welcomeConnectedMsg.textContent = state.login
-        ? `Signed in as ${state.login}.\nPilih repo di sidebar untuk mulai.`
+        ? `Signed in as ${state.login}.\n\nPilih repo di sidebar untuk mulai.`
         : "GitHub connected. Pilih repo di sidebar untuk mulai.";
     }
 

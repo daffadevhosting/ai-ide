@@ -155,6 +155,7 @@ html, body {
 .btn.ghost { background: transparent; color: var(--text-muted); }
 .btn.ghost:hover { background: var(--bg-hover); color: var(--text); }
 .btn.sm { padding: 4px 10px; font-size: 11px; }
+.file-action.hidden { display: none; }
 
 /* GitHub connect button */
 .btn.github {

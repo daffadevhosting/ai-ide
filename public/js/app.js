@@ -494,9 +494,15 @@ function getActiveTab() {
   return state.tabs.find((t) => t.id === state.activeTabId) || null;
 }
 
+function updateFileActionsVisibility() {
+  const hasOpenFile = state.tabs.length > 0;
+  $$(".file-action").forEach((button) => button.classList.toggle("hidden", !hasOpenFile));
+}
+
 function renderTabs() {
   const bar = $("#tab-bar");
   const list = $("#tabs");
+  updateFileActionsVisibility();
   if (!state.tabs.length) {
     bar.classList.remove("has-tabs");
     list.innerHTML = "";

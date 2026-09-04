@@ -29,7 +29,7 @@ export interface Env {
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-GitHub-Token",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-GitHub-Token, X-Review-Token",
 };
 
 // Heavy model for panel AI (review / fix / create / chat)
@@ -809,6 +809,8 @@ type WebappReview = {
   comment: string;
   author: string;
   authenticated: boolean;
+  ownerKey: string;
+  editToken?: string;
   createdAt: string;
 };
 
@@ -816,24 +818,43 @@ function reviewStore(env: Env): KVNamespace | undefined {
   return env.REVIEWS || env.SESSIONS;
 }
 
-async function reviewAuthor(request: Request, env: Env): Promise<{ name: string; authenticated: boolean }> {
+async function reviewAuthor(request: Request, env: Env): Promise<{ name: string; authenticated: boolean; ownerKey: string }> {
   // Only an explicitly supplied user token identifies a reviewer. Server-side
   // installation/PAT bindings must never turn anonymous visitors into one account.
   const token = request.headers.get("X-GitHub-Token");
-  if (!token) return { name: "Anonymous", authenticated: false };
+  if (!token) return { name: "Anonymous", authenticated: false, ownerKey: "" };
   try {
     const res = await githubFetch("/user", token);
     const user = (await res.json()) as { login?: string; name?: string };
     return {
       name: user.login || user.name || "GitHub user",
       authenticated: true,
+      ownerKey: `github:${user.login || user.name || "user"}`,
     };
   } catch {
-    return { name: "Anonymous", authenticated: false };
+    return { name: "Anonymous", authenticated: false, ownerKey: "" };
   }
 }
 
-async function handleReviews(request: Request, env: Env): Promise<Response> {
+function reviewCanEdit(review: WebappReview, request: Request, author: Awaited<ReturnType<typeof reviewAuthor>>): boolean {
+  if (review.authenticated && author.authenticated) return review.ownerKey === author.ownerKey;
+  return Boolean(review.editToken && request.headers.get("X-Review-Token") === review.editToken);
+}
+
+async function publicReview(review: WebappReview, request: Request, env: Env) {
+  const author = await reviewAuthor(request, env);
+  return {
+    id: review.id,
+    rating: review.rating,
+    comment: review.comment,
+    author: review.author,
+    authenticated: review.authenticated,
+    createdAt: review.createdAt,
+    canEdit: reviewCanEdit(review, request, author),
+  };
+}
+
+async function handleReviews(request: Request, env: Env, reviewId?: string): Promise<Response> {
   const store = reviewStore(env);
   if (!store) return error("Reviews KV is not configured", 503);
 
@@ -845,7 +866,7 @@ async function handleReviews(request: Request, env: Env): Promise<Response> {
       reviews.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       const total = reviews.reduce((sum, review) => sum + review.rating, 0);
       return json({
-        reviews,
+        reviews: await Promise.all(reviews.map((review) => publicReview(review, request, env))),
         count: reviews.length,
         average: reviews.length ? Math.round((total / reviews.length) * 10) / 10 : 0,
       });
@@ -861,20 +882,36 @@ async function handleReviews(request: Request, env: Env): Promise<Response> {
       return error("Comment must be between 3 and 1000 characters");
     }
 
+    if (request.method === "PUT") {
+      if (!reviewId) return error("Review id is required");
+      const review = (await store.get(`review:${reviewId}`, "json")) as WebappReview | null;
+      if (!review) return error("Review not found", 404);
+      const author = await reviewAuthor(request, env);
+      if (!reviewCanEdit(review, request, author)) return error("You can only edit your own review", 403);
+      review.rating = rating;
+      review.comment = comment;
+      review.createdAt = new Date().toISOString();
+      await store.put(`review:${review.id}`, JSON.stringify(review));
+      return json({ review: await publicReview(review, request, env) });
+    }
+
     const author = await reviewAuthor(request, env);
+    const editToken = author.authenticated ? undefined : crypto.randomUUID();
     const review: WebappReview = {
       id: crypto.randomUUID(),
       rating,
       comment,
       author: author.name,
       authenticated: author.authenticated,
+      ownerKey: author.ownerKey,
+      editToken,
       createdAt: new Date().toISOString(),
     };
     const index = JSON.parse((await store.get("reviews:index")) || "[]") as string[];
     const nextIndex = [review.id, ...index.filter((id) => id !== review.id)].slice(0, 200);
     await store.put(`review:${review.id}`, JSON.stringify(review));
     await store.put("reviews:index", JSON.stringify(nextIndex));
-    return json({ review }, 201);
+    return json({ review: await publicReview(review, request, env), editToken }, 201);
   } catch (e: any) {
     return error(`Reviews error: ${e.message}`, 500);
   }
@@ -904,6 +941,10 @@ export default {
       }
       if (path === "/api/reviews" && (request.method === "GET" || request.method === "POST")) {
         return handleReviews(request, env);
+      }
+      const reviewMatch = path.match(/^\/api\/reviews\/([^/]+)$/);
+      if (reviewMatch && request.method === "PUT") {
+        return handleReviews(request, env, reviewMatch[1]);
       }
 
       const treeMatch = path.match(/^\/api\/tree\/([^/]+)\/([^/]+)$/);

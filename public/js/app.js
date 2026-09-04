@@ -8,6 +8,7 @@ const state = {
   repoQuery: "",
   reviewRating: 0,
   reviews: [],
+  editingReviewId: null,
   currentRepo: null,
   currentPath: "",
   tabs: [], // { id, path, sha, content, language, dirty, model? }
@@ -138,6 +139,10 @@ async function api(path, options = {}) {
     ...(options.headers || {}),
   };
   if (state.token) headers["X-GitHub-Token"] = state.token;
+  if (path.startsWith("/api/reviews")) {
+    const reviewToken = localStorage.getItem("review_edit_token");
+    if (reviewToken) headers["X-Review-Token"] = reviewToken;
+  }
 
   const res = await fetch(path, { ...options, headers });
   if (options.stream) return res;
@@ -494,6 +499,16 @@ function renderReviews(data = {}) {
     const rating = index + 1;
     return `<button class="review-star ${rating <= state.reviewRating ? "selected" : ""}" type="button" data-rating="${rating}" role="radio" aria-label="${rating} star${rating === 1 ? "" : "s"}" aria-checked="${rating === state.reviewRating}"><i class="fa-${rating <= state.reviewRating ? "solid" : "regular"} fa-star"></i></button>`;
   }).join("");
+  const form = $("#review-comment");
+  const submit = $("#btn-submit-review");
+  const cancel = $("#btn-cancel-review-edit");
+  const editing = state.editingReviewId ? state.reviews.find((review) => review.id === state.editingReviewId) : null;
+  form?.classList.toggle("hidden", Boolean(state.reviews.some((review) => review.canEdit) && !editing));
+  stars.classList.toggle("hidden", Boolean(state.reviews.some((review) => review.canEdit) && !editing));
+  submit?.classList.toggle("hidden", Boolean(state.reviews.some((review) => review.canEdit) && !editing));
+  cancel?.classList.toggle("hidden", !editing);
+  if (submit) submit.innerHTML = editing ? `<i class="fa-solid fa-floppy-disk"></i> Save review` : `<i class="fa-solid fa-paper-plane"></i> Submit review`;
+  if (editing && form && form.value !== editing.comment) form.value = editing.comment;
   stars.querySelectorAll("[data-rating]").forEach((button) => {
     button.addEventListener("click", () => {
       state.reviewRating = Number(button.dataset.rating);
@@ -505,10 +520,29 @@ function renderReviews(data = {}) {
     <article class="review-item">
       <div class="review-item-head">
         <strong>${escapeHtml(review.author || "Anonymous")}</strong>
-        <span class="review-item-stars">${"★".repeat(Number(review.rating) || 0)}</span>
+        <span class="review-item-tools"><span class="review-item-stars">${"★".repeat(Number(review.rating) || 0)}</span>${review.canEdit ? `<button class="review-edit" type="button" data-edit-review="${review.id}" title="Edit review" aria-label="Edit review"><i class="fa-solid fa-pencil"></i></button>` : ""}</span>
       </div>
       <p>${escapeHtml(review.comment || "")}</p>
     </article>`).join("");
+  list.querySelectorAll("[data-edit-review]").forEach((button) => {
+    button.addEventListener("click", () => startReviewEdit(button.dataset.editReview));
+  });
+}
+
+function startReviewEdit(id) {
+  const review = state.reviews.find((item) => item.id === id && item.canEdit);
+  if (!review) return;
+  state.editingReviewId = id;
+  state.reviewRating = Number(review.rating) || 0;
+  renderReviews({ reviews: state.reviews, count: state.reviews.length, average: state.reviews.length ? state.reviews.reduce((sum, item) => sum + Number(item.rating || 0), 0) / state.reviews.length : 0 });
+  $("#review-comment")?.focus();
+}
+
+function cancelReviewEdit() {
+  state.editingReviewId = null;
+  state.reviewRating = 0;
+  $("#review-comment").value = "";
+  renderReviews({ reviews: state.reviews, count: state.reviews.length, average: state.reviews.length ? state.reviews.reduce((sum, item) => sum + Number(item.rating || 0), 0) / state.reviews.length : 0 });
 }
 
 async function loadReviews() {
@@ -535,12 +569,15 @@ async function submitReview() {
   }
   button.disabled = true;
   try {
-    await api("/api/reviews", {
-      method: "POST",
+    const editingId = state.editingReviewId;
+    const result = await api(editingId ? `/api/reviews/${editingId}` : "/api/reviews", {
+      method: editingId ? "PUT" : "POST",
       body: JSON.stringify({ rating: state.reviewRating, comment }),
     });
+    if (!editingId && result.editToken) localStorage.setItem("review_edit_token", result.editToken);
     commentInput.value = "";
     state.reviewRating = 0;
+    state.editingReviewId = null;
     await loadReviews();
     setStatus("Review submitted");
   } catch (e) {
@@ -1467,6 +1504,7 @@ function closeOverlays() {
 // ---------- Views ----------
 function switchView(name) {
   $$(".sidebar-header .tab").forEach((t) => t.classList.toggle("active", t.dataset.view === name));
+  $("#btn-reviews")?.classList.toggle("active", name === "reviews");
   $$(".view").forEach((v) => v.classList.toggle("active", v.id === `view-${name}`));
 }
 
@@ -1499,6 +1537,7 @@ function bindEvents() {
   $("#btn-theme").onclick = toggleTheme;
   $("#btn-sidebar").onclick = toggleSidebar;
   $("#btn-sidebar-close").onclick = () => setSidebarOpen(false);
+  $("#btn-reviews").onclick = () => switchView("reviews");
 
   // Custom dialog actions
   $("#ui-dialog-ok").onclick = () => {
@@ -1549,10 +1588,12 @@ function bindEvents() {
   $("#backdrop").onclick = closeOverlays;
 
   $("#btn-refresh").onclick = () => {
-    if ($(".sidebar-header .tab.active")?.dataset.view === "repos") loadRepos();
+    if ($("#btn-reviews")?.classList.contains("active")) loadReviews();
+    else if ($(".sidebar-header .tab.active")?.dataset.view === "repos") loadRepos();
     else if (state.currentRepo) loadTree(state.currentPath);
   };
   $("#btn-submit-review").onclick = submitReview;
+  $("#btn-cancel-review-edit").onclick = cancelReviewEdit;
 
   $("#btn-use-selection").onclick = () => {
     if (!state.editor) return;

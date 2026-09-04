@@ -8,6 +8,20 @@ Live example: `https://lumen.backendku.workers.dev/`
 
 ---
 
+## Changelog
+
+### 2026-09-05
+
+- Added VS Code-like save workflow: local **Save**, split-screen **Diff**, and commit only saved changes.
+- Added multi-file commit support with AI-generated commit messages.
+- Added repository search by name, full name, or description.
+- Added a dedicated **Reviews** sidebar tab beside Refresh.
+- Added public webapp reviews with 1–5 star ratings and comments for anonymous and GitHub users.
+- Added review editing with ownership checks and a pencil button for the review owner.
+- Added Cloudflare KV persistence through the `REVIEWS` binding.
+
+---
+
 ## Features
 
 | Area | Detail |
@@ -16,6 +30,9 @@ Live example: `https://lumen.backendku.workers.dev/`
 | **Editor** | Monaco (VS Code engine), multi-tab, dirty indicator, apply AI output |
 | **GitHub** | OAuth **Connect GitHub**, or manual PAT; list repos, file tree, open/edit, commit |
 | **GitHub App** | Optional JWT (RS256) + installation token for server-side auth |
+| **Git workflow** | Save locally, compare with split-screen diff, commit saved changes, AI commit messages |
+| **Repository search** | Search repositories by name, full name, or description |
+| **Reviews** | Separate review tab with star ratings, comments, anonymous/GitHub authors, and owner editing |
 | **UI** | Dark/light theme, collapsible sidebar & AI panel, mobile drawers |
 | **Dialogs** | Custom alert / confirm / prompt + custom select (no native browser dialogs) |
 | **Icons** | Font Awesome 6 + Lumen SVG mark |
@@ -138,6 +155,9 @@ npx wrangler secret put GITHUB_INSTALLATION_ID
 | `GET` | `/api/file/:owner/:repo/*` | File content |
 | `POST` | `/api/commit` | Create/update file (commit) |
 | `POST` | `/api/create-repo` | Create repository |
+| `GET` | `/api/reviews` | List reviews and rating summary |
+| `POST` | `/api/reviews` | Create an anonymous or GitHub-authenticated review |
+| `PUT` | `/api/reviews/:id` | Edit an owned review |
 
 GitHub routes accept header:
 
@@ -178,6 +198,9 @@ Bindings (wrangler.toml):
 
 - `AI` — Workers AI  
 - `ASSETS` — static files from `./public`  
+- `REVIEWS` — Cloudflare KV namespace for webapp reviews
+- `SESSIONS` — session KV namespace
+- `USAGE` — neuron usage and quota KV namespace
 
 ---
 

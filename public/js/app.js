@@ -32,6 +32,12 @@ function fa(name) {
   return `<i class="fa-solid fa-${name}"></i>`;
 }
 
+function decodeBase64Utf8(value) {
+  const binary = atob(value.replace(/\s/g, ""));
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
 // ---------- Custom dialogs (alert / confirm / prompt) ----------
 const ui = {
   _resolve: null,
@@ -586,7 +592,7 @@ async function openFile(path, sha) {
     const data = await api(
       `/api/file/${state.currentRepo.owner}/${state.currentRepo.name}/${path}?branch=${state.currentRepo.default_branch}`
     );
-    const content = data.decoded || (data.content ? atob(data.content.replace(/\n/g, "")) : "");
+    const content = data.decoded ?? (data.content ? decodeBase64Utf8(data.content) : "");
     const language = detectLanguage(path);
 
     const tab = {

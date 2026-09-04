@@ -218,6 +218,12 @@ function base64UrlEncode(data: ArrayBuffer | string): string {
   return str.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
+function decodeBase64Utf8(value: string): string {
+  const binary = atob(value.replace(/\s/g, ""));
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
 async function createGitHubAppJwt(appId: string, privateKeyPem: string): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   const header = { alg: "RS256", typ: "JWT" };
@@ -571,7 +577,7 @@ async function handleFile(
     );
     const data = (await res.json()) as any;
     if (data.content && data.encoding === "base64") {
-      data.decoded = atob(data.content.replace(/\n/g, ""));
+      data.decoded = decodeBase64Utf8(data.content);
     }
     return json(data);
   } catch (e: any) {

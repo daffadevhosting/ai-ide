@@ -107,6 +107,20 @@
             <div class="breadcrumb" id="breadcrumb"></div>
             <div id="file-tree" class="file-tree"></div>
           </div>
+          <section id="review-widget" class="review-widget" aria-labelledby="review-title">
+            <div class="review-heading">
+              <div>
+                <h2 id="review-title">Review Lumen</h2>
+                <div id="review-summary" class="review-summary">Loading reviews...</div>
+              </div>
+            </div>
+            <div id="review-stars" class="review-stars" role="radiogroup" aria-label="Rating"></div>
+            <textarea id="review-comment" class="review-comment" rows="3" maxlength="1000" placeholder="What do you think about Lumen?"></textarea>
+            <button id="btn-submit-review" class="btn primary review-submit" type="button">
+              <i class="fa-solid fa-paper-plane"></i> Submit review
+            </button>
+            <div id="review-list" class="review-list"></div>
+          </section>
         </div>
       </aside>
 

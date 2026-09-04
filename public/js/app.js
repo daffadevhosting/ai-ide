@@ -5,6 +5,9 @@ const state = {
   login: localStorage.getItem("gh_login") || "",
   theme: localStorage.getItem("theme") || "dark",
   repos: [],
+  repoQuery: "",
+  reviewRating: 0,
+  reviews: [],
   currentRepo: null,
   currentPath: "",
   tabs: [], // { id, path, sha, content, language, dirty, model? }
@@ -375,11 +378,23 @@ async function loadRepos() {
 
 function renderRepos() {
   const el = $("#view-repos");
+  const query = state.repoQuery.trim().toLowerCase();
+  const filteredRepos = query
+    ? state.repos.filter((repo) => `${repo.full_name} ${repo.description || ""}`.toLowerCase().includes(query))
+    : state.repos;
   if (!state.repos.length) {
     el.innerHTML = `<div class="empty-state">No repositories found</div>`;
     return;
   }
-  el.innerHTML = state.repos
+  el.innerHTML = `
+    <div class="repo-search">
+      <i class="fa-solid fa-magnifying-glass"></i>
+      <input id="repo-search-input" type="search" placeholder="Search repositories..." autocomplete="off" value="${state.repoQuery.replace(/"/g, "&quot;")}" />
+      <button id="repo-search-clear" class="icon-btn" type="button" title="Clear search" aria-label="Clear search">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+    </div>
+    ${filteredRepos.length ? filteredRepos
     .map(
       (r) => `
     <div class="repo-item ${state.currentRepo?.name === r.name ? "active" : ""}"
@@ -388,7 +403,21 @@ function renderRepos() {
       <span>${r.full_name}</span>
     </div>`
     )
-    .join("");
+    .join("") : `<div class="empty-state repo-empty-search">No repositories match your search</div>`}`;
+
+  const searchInput = $("#repo-search-input");
+  searchInput?.addEventListener("input", (event) => {
+    state.repoQuery = event.target.value;
+    renderRepos();
+    const nextInput = $("#repo-search-input");
+    nextInput?.focus();
+    nextInput?.setSelectionRange(state.repoQuery.length, state.repoQuery.length);
+  });
+  $("#repo-search-clear")?.addEventListener("click", () => {
+    state.repoQuery = "";
+    renderRepos();
+    $("#repo-search-input")?.focus();
+  });
 
   el.querySelectorAll(".repo-item").forEach((item) => {
     item.addEventListener("click", () => {
@@ -449,6 +478,76 @@ function renderTree(items) {
       else openFile(path, item.dataset.sha);
     });
   });
+}
+
+function renderReviews(data = {}) {
+  state.reviews = Array.isArray(data.reviews) ? data.reviews : state.reviews;
+  const summary = $("#review-summary");
+  const stars = $("#review-stars");
+  const list = $("#review-list");
+  if (!summary || !stars || !list) return;
+
+  summary.textContent = data.count
+    ? `${data.average} / 5 · ${data.count} review${data.count === 1 ? "" : "s"}`
+    : "Be the first to review";
+  stars.innerHTML = Array.from({ length: 5 }, (_, index) => {
+    const rating = index + 1;
+    return `<button class="review-star ${rating <= state.reviewRating ? "selected" : ""}" type="button" data-rating="${rating}" role="radio" aria-label="${rating} star${rating === 1 ? "" : "s"}" aria-checked="${rating === state.reviewRating}"><i class="fa-${rating <= state.reviewRating ? "solid" : "regular"} fa-star"></i></button>`;
+  }).join("");
+  stars.querySelectorAll("[data-rating]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.reviewRating = Number(button.dataset.rating);
+      renderReviews({ reviews: state.reviews, count: data.count, average: data.average });
+    });
+  });
+
+  list.innerHTML = state.reviews.slice(0, 5).map((review) => `
+    <article class="review-item">
+      <div class="review-item-head">
+        <strong>${escapeHtml(review.author || "Anonymous")}</strong>
+        <span class="review-item-stars">${"★".repeat(Number(review.rating) || 0)}</span>
+      </div>
+      <p>${escapeHtml(review.comment || "")}</p>
+    </article>`).join("");
+}
+
+async function loadReviews() {
+  try {
+    const data = await api("/api/reviews");
+    renderReviews(data);
+  } catch {
+    const summary = $("#review-summary");
+    if (summary) summary.textContent = "Reviews unavailable";
+  }
+}
+
+async function submitReview() {
+  const button = $("#btn-submit-review");
+  const commentInput = $("#review-comment");
+  if (!state.reviewRating) {
+    await ui.alert("Choose a star rating first.", "Review");
+    return;
+  }
+  const comment = commentInput.value.trim();
+  if (comment.length < 3) {
+    await ui.alert("Write at least 3 characters in your review.", "Review");
+    return;
+  }
+  button.disabled = true;
+  try {
+    await api("/api/reviews", {
+      method: "POST",
+      body: JSON.stringify({ rating: state.reviewRating, comment }),
+    });
+    commentInput.value = "";
+    state.reviewRating = 0;
+    await loadReviews();
+    setStatus("Review submitted");
+  } catch (e) {
+    await ui.alert(e.message, "Review failed");
+  } finally {
+    button.disabled = false;
+  }
 }
 
 function renderBreadcrumb() {
@@ -1453,6 +1552,7 @@ function bindEvents() {
     if ($(".sidebar-header .tab.active")?.dataset.view === "repos") loadRepos();
     else if (state.currentRepo) loadTree(state.currentPath);
   };
+  $("#btn-submit-review").onclick = submitReview;
 
   $("#btn-use-selection").onclick = () => {
     if (!state.editor) return;
@@ -1622,6 +1722,7 @@ function init() {
   updateAuthUI();
   updateInlineToggleUI();
   startQuotaPolling();
+  loadReviews();
 
   if (state.token) loadRepos();
   else setStatus("Lumen ready · Connect GitHub to begin");

@@ -21,6 +21,9 @@ export interface Env {
   NEURON_DAILY_LIMIT?: string;
   /** Soft lock threshold (default 9800) — AI blocked when used >= this */
   NEURON_SOFT_LIMIT?: string;
+  /** Dedicated KV for public webapp reviews; falls back to SESSIONS when unset. */
+  REVIEWS?: KVNamespace;
+  SESSIONS?: KVNamespace;
 }
 
 const CORS_HEADERS: Record<string, string> = {
@@ -800,6 +803,83 @@ async function handleAuthMe(request: Request, env: Env): Promise<Response> {
   }
 }
 
+type WebappReview = {
+  id: string;
+  rating: number;
+  comment: string;
+  author: string;
+  authenticated: boolean;
+  createdAt: string;
+};
+
+function reviewStore(env: Env): KVNamespace | undefined {
+  return env.REVIEWS || env.SESSIONS;
+}
+
+async function reviewAuthor(request: Request, env: Env): Promise<{ name: string; authenticated: boolean }> {
+  // Only an explicitly supplied user token identifies a reviewer. Server-side
+  // installation/PAT bindings must never turn anonymous visitors into one account.
+  const token = request.headers.get("X-GitHub-Token");
+  if (!token) return { name: "Anonymous", authenticated: false };
+  try {
+    const res = await githubFetch("/user", token);
+    const user = (await res.json()) as { login?: string; name?: string };
+    return {
+      name: user.login || user.name || "GitHub user",
+      authenticated: true,
+    };
+  } catch {
+    return { name: "Anonymous", authenticated: false };
+  }
+}
+
+async function handleReviews(request: Request, env: Env): Promise<Response> {
+  const store = reviewStore(env);
+  if (!store) return error("Reviews KV is not configured", 503);
+
+  try {
+    if (request.method === "GET") {
+      const index = JSON.parse((await store.get("reviews:index")) || "[]") as string[];
+      const reviews = (await Promise.all(index.map((id) => store.get(`review:${id}`, "json"))))
+        .filter(Boolean) as WebappReview[];
+      reviews.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      const total = reviews.reduce((sum, review) => sum + review.rating, 0);
+      return json({
+        reviews,
+        count: reviews.length,
+        average: reviews.length ? Math.round((total / reviews.length) * 10) / 10 : 0,
+      });
+    }
+
+    const body = (await request.json()) as { rating?: number; comment?: string };
+    const rating = Number(body.rating);
+    const comment = String(body.comment || "").trim();
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+      return error("Rating must be an integer from 1 to 5");
+    }
+    if (comment.length < 3 || comment.length > 1000) {
+      return error("Comment must be between 3 and 1000 characters");
+    }
+
+    const author = await reviewAuthor(request, env);
+    const review: WebappReview = {
+      id: crypto.randomUUID(),
+      rating,
+      comment,
+      author: author.name,
+      authenticated: author.authenticated,
+      createdAt: new Date().toISOString(),
+    };
+    const index = JSON.parse((await store.get("reviews:index")) || "[]") as string[];
+    const nextIndex = [review.id, ...index.filter((id) => id !== review.id)].slice(0, 200);
+    await store.put(`review:${review.id}`, JSON.stringify(review));
+    await store.put("reviews:index", JSON.stringify(nextIndex));
+    return json({ review }, 201);
+  } catch (e: any) {
+    return error(`Reviews error: ${e.message}`, 500);
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
     if (request.method === "OPTIONS") {
@@ -821,6 +901,9 @@ export default {
       }
       if (path === "/api/create-repo" && request.method === "POST") {
         return handleCreateRepo(request, env);
+      }
+      if (path === "/api/reviews" && (request.method === "GET" || request.method === "POST")) {
+        return handleReviews(request, env);
       }
 
       const treeMatch = path.match(/^\/api\/tree\/([^/]+)\/([^/]+)$/);

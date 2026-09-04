@@ -304,6 +304,83 @@ html, body {
   align-items: center;
 }
 
+.repo-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 2px 10px 8px;
+  padding: 0 7px 0 10px;
+  height: 32px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+}
+.repo-search:focus-within { border-color: var(--accent); }
+.repo-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: 12px var(--font);
+}
+.repo-search input::placeholder { color: var(--text-muted); }
+.repo-search .icon-btn { width: 22px; height: 22px; }
+.repo-empty-search { padding-top: 18px; }
+
+.review-widget {
+  margin: 18px 10px 12px;
+  padding: 12px;
+  border-top: 1px solid var(--border);
+}
+.review-heading h2 {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+.review-summary {
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.review-stars {
+  display: flex;
+  gap: 2px;
+  margin: 10px 0 8px;
+}
+.review-star {
+  padding: 2px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 16px;
+}
+.review-star:hover, .review-star.selected { color: var(--warning); }
+.review-comment {
+  width: 100%;
+  min-height: 66px;
+  padding: 8px;
+  resize: vertical;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font: 11px/1.45 var(--font);
+  outline: none;
+}
+.review-comment:focus { border-color: var(--accent); }
+.review-submit { width: 100%; justify-content: center; margin-top: 7px; }
+.review-submit:disabled { opacity: .55; cursor: wait; }
+.review-list { margin-top: 12px; }
+.review-item { padding: 8px 0; border-top: 1px solid var(--border); }
+.review-item-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.review-item-head strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.review-item-stars { flex-shrink: 0; color: var(--warning); font-size: 10px; letter-spacing: 1px; }
+.review-item p { margin-top: 4px; color: var(--text-muted); font-size: 11px; line-height: 1.4; word-break: break-word; }
+
 .repo-item, .tree-item {
   display: flex;
   align-items: center;

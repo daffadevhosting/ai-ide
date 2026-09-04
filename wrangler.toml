@@ -20,7 +20,7 @@ id = "89fa417d14584138807202f3748e041a"
 
 [[kv_namespaces]]
 binding = "REVIEWS"
-id = "<create-with-wrangler-kv-namespace-create>"
+id = "04b3426e285c48ff93c957cd9b70c07f"
 
 [observability]
 enabled = true

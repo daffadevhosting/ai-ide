@@ -218,13 +218,21 @@ function paypalBaseUrl(env: Env): string {
     : "https://api-m.sandbox.paypal.com";
 }
 
+function paypalMode(env: Env): "sandbox" | "live" {
+  return (env.PAYPAL_MODE || "sandbox").toLowerCase() === "live" ? "live" : "sandbox";
+}
+
+function paypalPlanId(env: Env): string {
+  return String(env.PAYPAL_PLAN_ID || "").trim();
+}
+
 function paypalConfigured(env: Env): boolean {
-  return Boolean(env.PAYPAL_CLIENT_ID && env.PAYPAL_CLIENT_SECRET && env.PAYPAL_PLAN_ID);
+  return Boolean(env.PAYPAL_CLIENT_ID?.trim() && env.PAYPAL_CLIENT_SECRET?.trim() && paypalPlanId(env));
 }
 
 async function getPayPalAccessToken(env: Env): Promise<string> {
   if (!paypalConfigured(env)) throw new Error("PayPal Pro is not configured");
-  const credentials = btoa(`${env.PAYPAL_CLIENT_ID}:${env.PAYPAL_CLIENT_SECRET}`);
+  const credentials = btoa(`${env.PAYPAL_CLIENT_ID?.trim()}:${env.PAYPAL_CLIENT_SECRET?.trim()}`);
   const res = await fetch(`${paypalBaseUrl(env)}/v1/oauth2/token`, {
     method: "POST",
     headers: {
@@ -628,7 +636,7 @@ async function handleProSubscribe(request: Request, env: Env): Promise<Response>
       method: "POST",
       headers: { "PayPal-Request-Id": crypto.randomUUID() },
       body: JSON.stringify({
-        plan_id: env.PAYPAL_PLAN_ID,
+        plan_id: paypalPlanId(env),
         application_context: {
           brand_name: "Lumen",
           locale: "en-US",
@@ -649,6 +657,12 @@ async function handleProSubscribe(request: Request, env: Env): Promise<Response>
     await env.USAGE.put(`pro:pending:${data.id}`, login, { expirationTtl: 60 * 30 });
     return json({ approvalUrl, subscriptionId: data.id });
   } catch (e: any) {
+    if (/PayPal API 404:.*(RESOURCE_NOT_FOUND|INVALID_RESOURCE_ID)/i.test(e.message || "")) {
+      return error(
+        `PayPal ${paypalMode(env)} plan not found. PAYPAL_PLAN_ID must be a subscription plan created in the same PayPal ${paypalMode(env)} account as PAYPAL_CLIENT_ID.`,
+        502
+      );
+    }
     return error(`Could not start Pro checkout: ${e.message}`, 502);
   }
 }

@@ -19,6 +19,7 @@ Live example: `https://lumen.backendku.workers.dev/`
 - Added public webapp reviews with 1–5 star ratings and comments for anonymous and GitHub users.
 - Added review editing with ownership checks and a pencil button for the review owner.
 - Added Cloudflare KV persistence through the `REVIEWS` binding.
+- Added verified PayPal Pro subscriptions with unlimited app-level neuron access.
 
 ---
 
@@ -33,6 +34,7 @@ Live example: `https://lumen.backendku.workers.dev/`
 | **Git workflow** | Save locally, compare with split-screen diff, commit saved changes, AI commit messages |
 | **Repository search** | Search repositories by name, full name, or description |
 | **Reviews** | Separate review tab with star ratings, comments, anonymous/GitHub authors, and owner editing |
+| **Lumen Pro** | PayPal subscription checkout linked to a GitHub account; bypasses the app quota gate |
 | **UI** | Dark/light theme, collapsible sidebar & AI panel, mobile drawers |
 | **Dialogs** | Custom alert / confirm / prompt + custom select (no native browser dialogs) |
 | **Icons** | Font Awesome 6 + Lumen SVG mark |
@@ -138,6 +140,25 @@ npx wrangler secret put GITHUB_INSTALLATION_ID
 
 **Token priority:** `X-GitHub-Token` header → `GITHUB_TOKEN` secret → App installation token.
 
+## Lumen Pro / PayPal
+
+Pro subscriptions are linked to the authenticated GitHub login. The Worker verifies the
+PayPal subscription server-side before bypassing the app neuron gate; changing browser
+storage or the UI cannot unlock Pro.
+
+Create a PayPal subscription product and plan, then configure the Worker:
+
+```bash
+npx wrangler secret put PAYPAL_CLIENT_ID
+npx wrangler secret put PAYPAL_CLIENT_SECRET
+npx wrangler secret put PAYPAL_PLAN_ID
+npx wrangler secret put PAYPAL_MODE       # `sandbox` or `live`; defaults to sandbox
+```
+
+`USAGE` KV is required for Pro ownership and subscription state. The Cloudflare account
+running Workers AI must also have enough Workers AI capacity: a PayPal subscription
+cannot bypass Cloudflare's own account-level free allocation.
+
 ---
 
 ## API
@@ -158,6 +179,9 @@ npx wrangler secret put GITHUB_INSTALLATION_ID
 | `GET` | `/api/reviews` | List reviews and rating summary |
 | `POST` | `/api/reviews` | Create an anonymous or GitHub-authenticated review |
 | `PUT` | `/api/reviews/:id` | Edit an owned review |
+| `POST` | `/api/pro/subscribe` | Create a PayPal subscription approval URL |
+| `POST` | `/api/pro/activate` | Verify and activate an approved subscription |
+| `GET` | `/api/pro/status` | Return the current GitHub user's Pro status |
 
 GitHub routes accept header:
 
@@ -193,6 +217,10 @@ Streaming uses Server-Sent Events (`text/event-stream`).
 | `GITHUB_APP_ID` | GitHub App JWT |
 | `GITHUB_PRIVATE_KEY` | GitHub App private key (PEM) |
 | `GITHUB_INSTALLATION_ID` | Installation for app token |
+| `PAYPAL_CLIENT_ID` | PayPal REST app client ID |
+| `PAYPAL_CLIENT_SECRET` | PayPal REST app secret |
+| `PAYPAL_PLAN_ID` | PayPal subscription plan ID |
+| `PAYPAL_MODE` | `sandbox` or `live` |
 
 Bindings (wrangler.toml):
 

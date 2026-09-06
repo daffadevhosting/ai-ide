@@ -159,6 +159,7 @@ function setStatus(msg, right) {
 
 /** Format neuron usage for the status bar (right side) */
 function formatNeuronStatus(q) {
+  if (q?.pro) return "♛ Lumen Pro · unlimited";
   if (!q || typeof q.used !== "number") return "Lumen · Workers AI";
   const used = Math.round(q.used);
   const limit = q.limit || 10000;
@@ -176,9 +177,11 @@ function updateNeuronBar(q) {
   if (q) lastQuota = q;
   const text = formatNeuronStatus(lastQuota);
   el.textContent = text;
-  el.classList.toggle("neuron-warn", Boolean(lastQuota && (lastQuota.blocked || lastQuota.used >= (lastQuota.softLimit || lastQuota.limit) * 0.85)));
+  el.classList.toggle("neuron-warn", Boolean(lastQuota && !lastQuota.pro && (lastQuota.blocked || lastQuota.used >= (lastQuota.softLimit || lastQuota.limit) * 0.85)));
   el.title = lastQuota
-    ? `Neurons used today: ~${Math.round(lastQuota.used)} / ${lastQuota.limit} (soft ${lastQuota.softLimit})\nResets ${new Date(lastQuota.resetAt).toISOString().replace("T", " ").slice(0, 19)} UTC\nTracking: ${lastQuota.tracking || "memory"}`
+    ? lastQuota.pro
+      ? "Lumen Pro · unlimited AI access"
+      : `Neurons used today: ~${Math.round(lastQuota.used)} / ${lastQuota.limit} (soft ${lastQuota.softLimit})\nResets ${new Date(lastQuota.resetAt).toISOString().replace("T", " ").slice(0, 19)} UTC\nTracking: ${lastQuota.tracking || "memory"}`
     : "Neuron usage";
 }
 
@@ -360,6 +363,49 @@ function saveToken() {
       .catch(() => {});
   }
   setStatus(state.token ? "Token saved" : "Token cleared");
+}
+
+async function startProCheckout() {
+  if (!state.token) {
+    await ui.alert("Connect GitHub first so your Pro subscription can be linked to your account.", "Get Lumen Pro");
+    connectGitHub();
+    return;
+  }
+  try {
+    setStatus("Opening PayPal checkout...");
+    const data = await api("/api/pro/subscribe", { method: "POST", body: "{}" });
+    if (!data.approvalUrl) throw new Error("PayPal approval URL is missing");
+    window.location.href = data.approvalUrl;
+  } catch (e) {
+    await ui.alert(e.message, "Pro checkout failed");
+  }
+}
+
+async function handlePayPalReturn() {
+  const params = new URLSearchParams(window.location.search);
+  const result = params.get("paypal");
+  if (!result) return;
+  const subscriptionId = params.get("subscription_id");
+  history.replaceState({}, "", "/");
+  if (result === "cancelled") {
+    setStatus("Pro checkout cancelled");
+    return;
+  }
+  if (!state.token || !subscriptionId) {
+    await ui.alert("Finish connecting GitHub, then start Pro checkout again.", "Pro activation");
+    return;
+  }
+  try {
+    setStatus("Verifying your Pro subscription...");
+    await api("/api/pro/activate", {
+      method: "POST",
+      body: JSON.stringify({ subscriptionId }),
+    });
+    await checkQuota(true);
+    setStatus("Lumen Pro is active");
+  } catch (e) {
+    await ui.alert(e.message, "Pro activation failed");
+  }
 }
 
 // ---------- Repos ----------
@@ -1693,6 +1739,8 @@ function bindEvents() {
   $("#btn-github-login") && ($("#btn-github-login").onclick = connectGitHub);
   $("#btn-github-login-welcome") && ($("#btn-github-login-welcome").onclick = connectGitHub);
   $("#btn-token").onclick = openTokenModal;
+  $("#btn-get-pro").onclick = startProCheckout;
+  $("#btn-quota-get-pro").onclick = startProCheckout;
   $("#btn-new-file").onclick = createLocalFile;
   $("#btn-new-file-welcome").onclick = createLocalFile;
   $("#btn-cancel-token").onclick = closeTokenModal;
@@ -1850,6 +1898,11 @@ function setQuotaLock(show, quota) {
     return;
   }
 
+  if (quota?.pro || lastQuota?.pro) {
+    el.classList.add("hidden");
+    return;
+  }
+
   lastQuota = quota || lastQuota;
   const resetAt = lastQuota?.resetAt || 0;
   const label = $("#quota-reset-label");
@@ -1881,21 +1934,14 @@ function setQuotaLock(show, quota) {
     updateInlineToggleUI();
   }
 
-  // Global neuron exhausted → force logout active GitHub session (once per lock)
-  if (!quotaLogoutDone) {
-    quotaLogoutDone = true;
-    forceLogoutGitHub("Logged out · daily neuron quota reached");
-  }
 }
 
 async function checkQuota(forceUnlockAttempt) {
   try {
-    const res = await fetch("/api/quota");
-    if (!res.ok) return;
-    const q = await res.json();
+    const q = await api("/api/quota");
     lastQuota = q;
     updateNeuronBar(q);
-    if (q.blocked) {
+    if (q.blocked && !q.pro) {
       setQuotaLock(true, q);
       setStatus("AI paused · daily neuron quota");
     } else {
@@ -1912,7 +1958,7 @@ async function checkQuota(forceUnlockAttempt) {
 }
 
 function handleQuotaError(payload) {
-  if (payload?.code === "NEURON_QUOTA" || payload?.quota?.blocked) {
+  if (!payload?.quota?.pro && (payload?.code === "NEURON_QUOTA" || payload?.quota?.blocked)) {
     const q = payload.quota || payload;
     setQuotaLock(true, q);
     updateNeuronBar(q);
@@ -1942,6 +1988,7 @@ function init() {
   bindEvents();
   initEditor();
   handleOAuthReturn();
+  handlePayPalReturn();
   updateAuthUI();
   updateInlineToggleUI();
   startQuotaPolling();

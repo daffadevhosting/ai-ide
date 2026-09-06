@@ -19,11 +19,16 @@ export interface Env {
   CLOUDFLARE_API_TOKEN?: string;
   /** Daily free neuron budget (default 10000) */
   NEURON_DAILY_LIMIT?: string;
-  /** Soft lock threshold (default 9800) — AI blocked when used >= this */
+  /** Soft lock threshold (default 9500) — AI blocked when used >= this */
   NEURON_SOFT_LIMIT?: string;
   /** Dedicated KV for public webapp reviews; falls back to SESSIONS when unset. */
   REVIEWS?: KVNamespace;
   SESSIONS?: KVNamespace;
+  /** PayPal REST credentials and the subscription plan to sell. */
+  PAYPAL_CLIENT_ID?: string;
+  PAYPAL_CLIENT_SECRET?: string;
+  PAYPAL_PLAN_ID?: string;
+  PAYPAL_MODE?: string;
 }
 
 const CORS_HEADERS: Record<string, string> = {
@@ -47,7 +52,15 @@ let memNeuronUsed = 0;
 let memQuotaExhaustedUntil = 0; // unix ms
 
 const DEFAULT_NEURON_LIMIT = 10000;
-const DEFAULT_NEURON_SOFT = 9800;
+const DEFAULT_NEURON_SOFT = 9500;
+
+type ProSubscription = {
+  id: string;
+  login: string;
+  status: string;
+  checkedAt: number;
+  expiresAt?: string;
+};
 
 /** Rough neuron cost estimates per action (Cloudflare does not expose live remaining quota via simple API) */
 const NEURON_COST: Record<string, number> = {
@@ -148,10 +161,11 @@ function isCfQuotaError(err: unknown): boolean {
   );
 }
 
-async function buildQuotaStatus(env: Env) {
+async function buildQuotaStatus(env: Env, request?: Request) {
   const { limit, soft } = neuronLimits(env);
   const { used, day } = await getNeuronUsage(env);
   const flag = await isQuotaExhausted(env);
+  const pro = request ? await getProStatus(request, env) : { active: false };
   const remaining = Math.max(0, limit - used);
   const blocked = flag.exhausted || used >= soft;
   const resetAt = flag.exhausted ? flag.until : nextUtcMidnightMs();
@@ -161,7 +175,10 @@ async function buildQuotaStatus(env: Env) {
     limit,
     softLimit: soft,
     remaining,
-    blocked,
+    blocked: pro.active ? false : blocked,
+    pro: pro.active,
+    proLogin: pro.login,
+    subscriptionId: pro.subscription?.id,
     reason: flag.exhausted
       ? "cloudflare_quota"
       : used >= soft
@@ -193,6 +210,93 @@ function json(data: unknown, status = 200) {
 
 function error(message: string, status = 400) {
   return json({ error: message }, status);
+}
+
+function paypalBaseUrl(env: Env): string {
+  return (env.PAYPAL_MODE || "sandbox").toLowerCase() === "live"
+    ? "https://api-m.paypal.com"
+    : "https://api-m.sandbox.paypal.com";
+}
+
+function paypalConfigured(env: Env): boolean {
+  return Boolean(env.PAYPAL_CLIENT_ID && env.PAYPAL_CLIENT_SECRET && env.PAYPAL_PLAN_ID);
+}
+
+async function getPayPalAccessToken(env: Env): Promise<string> {
+  if (!paypalConfigured(env)) throw new Error("PayPal Pro is not configured");
+  const credentials = btoa(`${env.PAYPAL_CLIENT_ID}:${env.PAYPAL_CLIENT_SECRET}`);
+  const res = await fetch(`${paypalBaseUrl(env)}/v1/oauth2/token`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      Authorization: `Basic ${credentials}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: "grant_type=client_credentials",
+  });
+  if (!res.ok) throw new Error(`PayPal auth failed: ${res.status}`);
+  const data = (await res.json()) as { access_token?: string };
+  if (!data.access_token) throw new Error("PayPal did not return an access token");
+  return data.access_token;
+}
+
+async function paypalFetch(env: Env, path: string, options: RequestInit = {}) {
+  const token = await getPayPalAccessToken(env);
+  const res = await fetch(`${paypalBaseUrl(env)}${path}`, {
+    ...options,
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+      ...(options.headers || {}),
+    },
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`PayPal API ${res.status}: ${body}`);
+  }
+  return res;
+}
+
+async function getExplicitGitHubLogin(request: Request, env: Env): Promise<string | null> {
+  const token = request.headers.get("X-GitHub-Token");
+  if (!token) return null;
+  try {
+    const res = await githubFetch("/user", token);
+    const user = (await res.json()) as { login?: string };
+    return user.login || null;
+  } catch {
+    return null;
+  }
+}
+
+async function getProStatus(request: Request, env: Env): Promise<{ active: boolean; login?: string; subscription?: ProSubscription }> {
+  const login = await getExplicitGitHubLogin(request, env);
+  if (!login || !env.USAGE || !paypalConfigured(env)) return { active: false, login: login || undefined };
+
+  const key = `pro:subscription:${login}`;
+  const stored = (await env.USAGE.get(key, "json")) as ProSubscription | null;
+  if (!stored || stored.status !== "ACTIVE") return { active: false, login };
+
+  // Refresh PayPal status periodically so cancelled subscriptions lose access.
+  if (Date.now() - stored.checkedAt < 5 * 60 * 1000) {
+    return { active: true, login, subscription: stored };
+  }
+
+  try {
+    const res = await paypalFetch(env, `/v1/billing/subscriptions/${encodeURIComponent(stored.id)}`);
+    const current = (await res.json()) as { status?: string; billing_info?: { next_billing_time?: string } };
+    const next: ProSubscription = {
+      ...stored,
+      status: current.status || "UNKNOWN",
+      checkedAt: Date.now(),
+      expiresAt: current.billing_info?.next_billing_time,
+    };
+    await env.USAGE.put(key, JSON.stringify(next), { expirationTtl: 60 * 60 * 24 * 370 });
+    return { active: next.status === "ACTIVE", login, subscription: next };
+  } catch {
+    return { active: false, login };
+  }
 }
 
 // ---------- GitHub App JWT (Web Crypto RS256) ----------
@@ -365,7 +469,7 @@ async function handleAI(request: Request, env: Env): Promise<Response> {
   };
 
   // Soft / hard neuron gate (estimate + Cloudflare exhausted flag)
-  const quota = await buildQuotaStatus(env);
+  const quota = await buildQuotaStatus(env, request);
   if (quota.blocked) {
     return quotaBlockedResponse(quota);
   }
@@ -402,11 +506,11 @@ Language: ${language}. File: ${filename}.`,
       });
       await addNeuronUsage(env, cost);
       const text = cleanCompletion(extractAIText(result));
-      return json({ result: text, model: COMPLETE_MODEL, quota: await buildQuotaStatus(env) });
+      return json({ result: text, model: COMPLETE_MODEL, quota: await buildQuotaStatus(env, request) });
     } catch (e: any) {
       if (isCfQuotaError(e)) {
         await markQuotaExhausted(env);
-        return quotaBlockedResponse(await buildQuotaStatus(env));
+        return quotaBlockedResponse(await buildQuotaStatus(env, request));
       }
       return error(`AI complete error: ${e.message}`, 500);
     }
@@ -498,18 +602,97 @@ Preserve every numeric literal in code exactly (do not drop zeros).`,
     return json({
       result: extractAIText(result),
       model: CODE_MODEL,
-      quota: await buildQuotaStatus(env),
+      quota: await buildQuotaStatus(env, request),
     });
   } catch (e: any) {
     if (isCfQuotaError(e)) {
       await markQuotaExhausted(env);
-      return quotaBlockedResponse(await buildQuotaStatus(env));
+      return quotaBlockedResponse(await buildQuotaStatus(env, request));
     }
     return error(`AI error: ${e.message}`, 500);
   }
 }
 
 // ---------- GitHub routes ----------
+
+async function handleProSubscribe(request: Request, env: Env): Promise<Response> {
+  if (!paypalConfigured(env) || !env.USAGE) {
+    return error("Pro subscription is not configured", 503);
+  }
+  const login = await getExplicitGitHubLogin(request, env);
+  if (!login) return error("Sign in with GitHub before starting Pro", 401);
+
+  try {
+    const url = new URL(request.url);
+    const res = await paypalFetch(env, "/v1/billing/subscriptions", {
+      method: "POST",
+      headers: { "PayPal-Request-Id": crypto.randomUUID() },
+      body: JSON.stringify({
+        plan_id: env.PAYPAL_PLAN_ID,
+        application_context: {
+          brand_name: "Lumen",
+          locale: "en-US",
+          user_action: "SUBSCRIBE_NOW",
+          return_url: `${url.origin}/?paypal=success`,
+          cancel_url: `${url.origin}/?paypal=cancelled`,
+        },
+      }),
+    });
+    const data = (await res.json()) as {
+      id?: string;
+      links?: Array<{ rel?: string; href?: string }>;
+    };
+    if (!data.id) return error("PayPal did not return a subscription id", 502);
+    const approvalUrl = data.links?.find((link) => link.rel === "approve")?.href;
+    if (!approvalUrl) return error("PayPal did not return an approval URL", 502);
+
+    await env.USAGE.put(`pro:pending:${data.id}`, login, { expirationTtl: 60 * 30 });
+    return json({ approvalUrl, subscriptionId: data.id });
+  } catch (e: any) {
+    return error(`Could not start Pro checkout: ${e.message}`, 502);
+  }
+}
+
+async function handleProActivate(request: Request, env: Env): Promise<Response> {
+  if (!paypalConfigured(env) || !env.USAGE) return error("Pro subscription is not configured", 503);
+  const login = await getExplicitGitHubLogin(request, env);
+  if (!login) return error("Sign in with GitHub before activating Pro", 401);
+
+  try {
+    const body = (await request.json()) as { subscriptionId?: string };
+    const subscriptionId = String(body.subscriptionId || "").trim();
+    if (!subscriptionId) return error("PayPal subscription id is required");
+    const pendingLogin = await env.USAGE.get(`pro:pending:${subscriptionId}`);
+    if (pendingLogin !== login) return error("This subscription checkout does not belong to this account", 403);
+
+    const res = await paypalFetch(env, `/v1/billing/subscriptions/${encodeURIComponent(subscriptionId)}`);
+    const data = (await res.json()) as {
+      status?: string;
+      billing_info?: { next_billing_time?: string };
+    };
+    if (data.status !== "ACTIVE") return error(`PayPal subscription is ${data.status || "not active"}`, 402);
+
+    const subscription: ProSubscription = {
+      id: subscriptionId,
+      login,
+      status: data.status,
+      checkedAt: Date.now(),
+      expiresAt: data.billing_info?.next_billing_time,
+    };
+    await env.USAGE.put(`pro:subscription:${login}`, JSON.stringify(subscription), {
+      expirationTtl: 60 * 60 * 24 * 370,
+    });
+    await env.USAGE.delete(`pro:pending:${subscriptionId}`);
+    return json({ pro: true, subscription });
+  } catch (e: any) {
+    return error(`Could not verify Pro subscription: ${e.message}`, 502);
+  }
+}
+
+async function handleProStatus(request: Request, env: Env): Promise<Response> {
+  const pro = await getProStatus(request, env);
+  return json({ pro: pro.active, login: pro.login, subscription: pro.subscription });
+}
 
 async function handleRepos(request: Request, env: Env): Promise<Response> {
   const token = await getGitHubToken(env, request);
@@ -936,6 +1119,15 @@ export default {
       if (path === "/api/ai" && request.method === "POST") {
         return handleAI(request, env);
       }
+      if (path === "/api/pro/subscribe" && request.method === "POST") {
+        return handleProSubscribe(request, env);
+      }
+      if (path === "/api/pro/activate" && request.method === "POST") {
+        return handleProActivate(request, env);
+      }
+      if (path === "/api/pro/status" && request.method === "GET") {
+        return handleProStatus(request, env);
+      }
       if (path === "/api/repos" && request.method === "GET") {
         return handleRepos(request, env);
       }
@@ -983,7 +1175,7 @@ export default {
       }
 
       if (path === "/api/quota" && request.method === "GET") {
-        return json(await buildQuotaStatus(env));
+        return json(await buildQuotaStatus(env, request));
       }
 
       // ----- GitHub OAuth (Connect account) -----

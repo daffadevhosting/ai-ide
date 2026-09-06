@@ -172,6 +172,13 @@ html, body {
   background: var(--accent-soft);
   color: var(--accent);
 }
+.btn.pro {
+  background: #d9a441;
+  color: #241b08;
+  font-weight: 700;
+}
+.btn.pro:hover { background: #edbd55; color: #241b08; }
+.btn.pro:disabled { opacity: .55; cursor: not-allowed; }
 
 
 .icon-btn {
@@ -1777,4 +1784,9 @@ select option {
   color: var(--text-muted);
   opacity: 0.8;
   margin: 0;
+}
+.quota-pro-btn {
+  margin-top: 18px;
+  justify-content: center;
+  min-width: 190px;
 }

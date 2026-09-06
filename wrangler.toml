@@ -39,5 +39,6 @@ persist = true
 head_sampling_rate = 1
 
 [vars]
+PAYPAL_MODE = "sandbox"
 NEURON_DAILY_LIMIT = "10000"
-NEURON_SOFT_LIMIT = "9800"
+NEURON_SOFT_LIMIT = "9500"

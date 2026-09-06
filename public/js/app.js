@@ -11,6 +11,7 @@ const state = {
   editingReviewId: null,
   currentRepo: null,
   currentPath: "",
+  treeEntries: [],
   tabs: [], // { id, path, sha, content, language, dirty, model? }
   activeTabId: null,
   editor: null,
@@ -242,6 +243,7 @@ function forceLogoutGitHub(reason) {
   state.repos = [];
   state.currentRepo = null;
   state.currentPath = "";
+  state.treeEntries = [];
   // Close all editor tabs cleanly
   state.tabs.forEach((t) => {
     if (t.model && !t.model.isDisposed?.()) {
@@ -467,13 +469,28 @@ function renderRepos() {
   });
 
   el.querySelectorAll(".repo-item").forEach((item) => {
-    item.addEventListener("click", () => {
-      state.currentRepo = {
+    item.addEventListener("click", async () => {
+      const nextRepo = {
         owner: item.dataset.owner,
         name: item.dataset.name,
         default_branch: item.dataset.branch,
       };
+      if (state.tabs.some((tab) => tab.dirty)) {
+        const ok = await ui.confirm("Switch repository? Unsaved changes in the current project will be lost.", "Switch repository");
+        if (!ok) return;
+      }
+      state.tabs.forEach((tab) => tab.model?.dispose?.());
+      state.tabs = [];
+      state.activeTabId = null;
+      state.treeEntries = [];
+      state.currentRepo = {
+        ...nextRepo,
+      };
       state.currentPath = "";
+      state.editor?.setModel(null);
+      $("#editor-container")?.classList.remove("visible");
+      $("#welcome").style.display = "flex";
+      renderTabs();
       switchView("files");
       loadTree();
       renderRepos();
@@ -501,6 +518,7 @@ async function loadTree(path = "") {
 
 function renderTree(items) {
   const el = $("#file-tree");
+  state.treeEntries = items.map((item) => ({ type: item.type, path: item.path, name: item.name }));
   items.sort((a, b) => {
     if (a.type === b.type) return a.name.localeCompare(b.name);
     return a.type === "dir" ? -1 : 1;
@@ -674,7 +692,16 @@ function getActiveTab() {
 
 function updateFileActionsVisibility() {
   const hasOpenFile = state.tabs.length > 0;
+  const activeTab = getActiveTab();
+  const hasUnsavedChanges = state.tabs.some((tab) => tab.dirty);
+  const hasSavedChanges = state.tabs.some((tab) => tab.savedContent !== tab.remoteContent);
+  const saveButton = $("#btn-save-file");
+  const commitButton = $("#btn-save");
+
   $$(".file-action").forEach((button) => button.classList.toggle("hidden", !hasOpenFile));
+  saveButton?.classList.toggle("primary", Boolean(activeTab?.dirty));
+  saveButton?.classList.toggle("ghost", !activeTab?.dirty);
+  commitButton?.classList.toggle("hidden", !hasOpenFile || hasUnsavedChanges || !hasSavedChanges);
 }
 
 function renderTabs() {
@@ -1042,6 +1069,7 @@ async function commitFile() {
       tab.sha = result.content?.sha || tab.sha;
     }
     renderTabs();
+    await loadTree(state.currentPath);
     setStatus(`Committed ${pendingTabs.length} file${pendingTabs.length === 1 ? "" : "s"} successfully`);
   } catch (e) {
     setStatus(`Commit failed: ${e.message}`);
@@ -1248,6 +1276,73 @@ function findTabByPathHint(hint) {
   );
 }
 
+function stripFilenameMarker(text, hint) {
+  if (!hint) return text;
+  const lines = text.split("\n");
+  const normalizedHint = hint.replace(/\\/g, "/").toLowerCase();
+  const marker = /^\s*(?:\/\/|#|--|<!--)\s*(?:file|filename|path)\s*:\s*([^\s>-]+).*$/i;
+  const index = lines.slice(0, 6).findIndex((line) => {
+    const match = line.match(marker);
+    return match && match[1].replace(/\\/g, "/").toLowerCase() === normalizedHint;
+  });
+  if (index >= 0) lines.splice(index, 1);
+  return lines.join("\n").replace(/^\n+/, "");
+}
+
+function buildAIContext() {
+  const repo = state.currentRepo;
+  const activeTab = getActiveTab();
+  const openFiles = state.tabs.map((tab) => {
+    const content = tab.id === state.activeTabId && state.editor ? state.editor.getValue() : tab.content;
+    return [
+      `FILE: ${tab.path}${tab.dirty ? " [UNSAVED]" : ""}`,
+      `LANGUAGE: ${tab.language || "plaintext"}`,
+      `CONTENT:\n${String(content || "").slice(0, 12000)}`,
+    ].join("\n");
+  });
+  const visibleTree = state.treeEntries.length
+    ? state.treeEntries.map((item) => `${item.type === "dir" ? "DIR " : "FILE"} ${item.path}`).join("\n")
+    : "(File tree not loaded)";
+
+  return [
+    "PROJECT CONTEXT (source of truth; do not invent repository details)",
+    repo
+      ? `REPOSITORY: ${repo.owner}/${repo.name}\nBRANCH: ${repo.default_branch}`
+      : "REPOSITORY: none selected",
+    `VISIBLE PATH: ${state.currentPath || "/"}`,
+    `VISIBLE TREE:\n${visibleTree}`,
+    `ACTIVE FILE: ${activeTab?.path || "none"}`,
+    `OPEN FILES (${state.tabs.length}):\n${openFiles.length ? openFiles.join("\n\n") : "(none)"}`,
+    "When proposing changes, use the exact existing paths above. If a new file is needed, label its code block with FILE: path/to/file.ext.",
+  ].join("\n\n").slice(0, 42000);
+}
+
+function createGeneratedTab(path, content, language) {
+  if (!state.currentRepo || !path) return null;
+  const normalizedPath = path.replace(/^\/+/, "").replace(/\\/g, "/");
+  const id = tabId(normalizedPath);
+  const existing = state.tabs.find((tab) => tab.id === id);
+  if (existing) return existing;
+
+  const tab = {
+    id,
+    path: normalizedPath,
+    sha: "",
+    content,
+    remoteContent: "",
+    savedContent: "",
+    language: language || detectLanguage(normalizedPath),
+    dirty: true,
+    model: null,
+    owner: state.currentRepo.owner,
+    repo: state.currentRepo.name,
+    branch: state.currentRepo.default_branch,
+  };
+  state.tabs.push(tab);
+  activateTab(tab.id);
+  return tab;
+}
+
 function applyCodeToEditor(code, lang) {
   if (!state.editor) {
     setStatus("No editor open — buka file dulu");
@@ -1261,7 +1356,11 @@ function applyCodeToEditor(code, lang) {
 
   // If AI labeled the block with a filename and that tab is open, switch to it
   const hint = guessFilenameFromCode(text, lang);
-  const targetTab = findTabByPathHint(hint);
+  text = stripFilenameMarker(text, hint);
+  let targetTab = findTabByPathHint(hint);
+  if (!targetTab && hint && state.currentRepo) {
+    targetTab = createGeneratedTab(hint, "", lang);
+  }
   if (targetTab && targetTab.id !== state.activeTabId) {
     activateTab(targetTab.id);
   }
@@ -1428,6 +1527,7 @@ async function sendAI() {
         code: code || undefined,
         language,
         filename: getActiveTab()?.path,
+        context: buildAIContext(),
         stream: true,
       }),
     });

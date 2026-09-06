@@ -994,7 +994,7 @@ function initEditor() {
       renderLineHighlight: "line",
       cursorBlinking: "smooth",
       smoothScrolling: true,
-      inlineSuggest: { enabled: true },
+      inlineSuggest: { enabled: false },
       quickSuggestions: { other: true, comments: false, strings: false },
       selectionHighlight: true,
       occurrencesHighlight: "singleFile",

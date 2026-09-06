@@ -306,6 +306,59 @@ html, body {
   align-items: center;
 }
 
+.repo-error {
+  gap: 8px;
+  padding: 42px 20px;
+}
+.repo-error strong {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.repo-error > span {
+  max-width: 220px;
+}
+.repo-error-icon-wrap {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--warning) 15%, transparent);
+  color: var(--warning);
+  margin-bottom: 2px;
+}
+.repo-error-icon { font-size: 18px; color: var(--warning); }
+.repo-error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+.repo-error-details {
+  width: 100%;
+  max-width: 235px;
+  margin-top: 6px;
+  text-align: left;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.repo-error-details summary { cursor: pointer; }
+.repo-error-details code {
+  display: block;
+  max-height: 90px;
+  overflow: auto;
+  margin-top: 6px;
+  padding: 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--text-muted);
+  font: 10px/1.45 var(--mono);
+  overflow-wrap: anywhere;
+}
+
 .repo-search {
   display: flex;
   align-items: center;

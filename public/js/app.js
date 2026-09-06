@@ -376,9 +376,51 @@ async function loadRepos() {
     renderRepos();
     setStatus(`${state.repos.length} repositories`);
   } catch (e) {
-    $("#view-repos").innerHTML = `<div class="empty-state">Error: ${e.message}</div>`;
+    renderRepoError(e);
     setStatus("Failed to load repos");
   }
+}
+
+function renderRepoError(error) {
+  const message = String(error?.message || "Unknown error");
+  const isAuthError = /401|bad credentials|unauthorized/i.test(message);
+  const el = $("#view-repos");
+
+  if (!isAuthError) {
+    el.innerHTML = `
+      <div class="empty-state repo-error">
+        <i class="fa-solid fa-triangle-exclamation repo-error-icon"></i>
+        <strong>Repositories could not load</strong>
+        <span>Try refreshing the sidebar.</span>
+        <details class="repo-error-details">
+          <summary>Technical details</summary>
+          <code>${escapeHtml(message)}</code>
+        </details>
+      </div>`;
+    return;
+  }
+
+  el.innerHTML = `
+    <div class="empty-state repo-error repo-auth-error">
+      <div class="repo-error-icon-wrap"><i class="fa-solid fa-key repo-error-icon"></i></div>
+      <strong>GitHub connection expired</strong>
+      <span>Your token was rejected. Connect GitHub again or update your token to continue.</span>
+      <div class="repo-error-actions">
+        <button class="btn github btn-sm" data-repo-action="login">
+          <i class="fa-brands fa-github"></i> Connect GitHub
+        </button>
+        <button class="btn ghost btn-sm" data-repo-action="token">
+          <i class="fa-solid fa-key"></i> Update token
+        </button>
+      </div>
+      <details class="repo-error-details">
+        <summary>Technical details</summary>
+        <code>${escapeHtml(message)}</code>
+      </details>
+    </div>`;
+
+  el.querySelector('[data-repo-action="login"]')?.addEventListener("click", connectGitHub);
+  el.querySelector('[data-repo-action="token"]')?.addEventListener("click", openTokenModal);
 }
 
 function renderRepos() {

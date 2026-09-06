@@ -231,6 +231,7 @@ function updateAuthUI() {
       welcomeBtn.style.display = "";
     }
   }
+  updateFileActionsVisibility();
 }
 
 /** Clear GitHub session (no confirm). Used by manual disconnect + quota lock. */
@@ -692,6 +693,7 @@ function getActiveTab() {
 
 function updateFileActionsVisibility() {
   const hasOpenFile = state.tabs.length > 0;
+  const isAuthenticated = Boolean(state.token);
   const activeTab = getActiveTab();
   const hasUnsavedChanges = state.tabs.some((tab) => tab.dirty);
   const hasSavedChanges = state.tabs.some((tab) => tab.savedContent !== tab.remoteContent);
@@ -701,7 +703,15 @@ function updateFileActionsVisibility() {
   $$(".file-action").forEach((button) => button.classList.toggle("hidden", !hasOpenFile));
   saveButton?.classList.toggle("primary", Boolean(activeTab?.dirty));
   saveButton?.classList.toggle("ghost", !activeTab?.dirty);
-  commitButton?.classList.toggle("hidden", !hasOpenFile || hasUnsavedChanges || !hasSavedChanges);
+  if (saveButton) {
+    saveButton.disabled = !isAuthenticated;
+    saveButton.title = isAuthenticated ? "Save file locally (Ctrl/Cmd+S)" : "Sign in to save changes to the project";
+  }
+  if (commitButton) {
+    commitButton.disabled = !isAuthenticated;
+    commitButton.classList.toggle("hidden", !hasOpenFile || !isAuthenticated || hasUnsavedChanges || !hasSavedChanges);
+    commitButton.title = isAuthenticated ? "Commit saved changes & Push" : "Sign in to commit changes to GitHub";
+  }
 }
 
 function renderTabs() {
@@ -1023,12 +1033,17 @@ function initEditor() {
       }
     });
 
+    if (state.activeTabId) activateTab(state.activeTabId);
     registerInlineCompletions();
     updateInlineToggleUI();
   });
 }
 
 async function commitFile() {
+  if (!state.token) {
+    setStatus("Sign in to commit changes to GitHub");
+    return;
+  }
   const activeTab = getActiveTab();
   if (!activeTab || !state.editor) {
     setStatus("No file open");
@@ -1144,6 +1159,10 @@ async function generateCommitMessage() {
 }
 
 function saveCurrentFile() {
+  if (!state.token) {
+    setStatus("Sign in to save changes to GitHub");
+    return;
+  }
   const tab = getActiveTab();
   if (!tab || !state.editor) {
     setStatus("No file open");
@@ -1318,7 +1337,7 @@ function buildAIContext() {
 }
 
 function createGeneratedTab(path, content, language) {
-  if (!state.currentRepo || !path) return null;
+  if (!path) return null;
   const normalizedPath = path.replace(/^\/+/, "").replace(/\\/g, "/");
   const id = tabId(normalizedPath);
   const existing = state.tabs.find((tab) => tab.id === id);
@@ -1334,13 +1353,32 @@ function createGeneratedTab(path, content, language) {
     language: language || detectLanguage(normalizedPath),
     dirty: true,
     model: null,
-    owner: state.currentRepo.owner,
-    repo: state.currentRepo.name,
-    branch: state.currentRepo.default_branch,
+    owner: state.currentRepo?.owner || "",
+    repo: state.currentRepo?.name || "",
+    branch: state.currentRepo?.default_branch || "main",
   };
   state.tabs.push(tab);
   activateTab(tab.id);
   return tab;
+}
+
+async function createLocalFile() {
+  const path = await ui.prompt(
+    "Enter a file path. Use / to create folders, for example src/app.js.",
+    "untitled.js",
+    "New local file"
+  );
+  const normalizedPath = String(path || "").trim().replace(/^\/+/, "").replace(/\\/g, "/");
+  if (!normalizedPath) return;
+  if (state.tabs.some((tab) => tab.path === normalizedPath)) {
+    activateTab(tabId(normalizedPath));
+    return;
+  }
+  const tab = createGeneratedTab(normalizedPath, "", detectLanguage(normalizedPath));
+  if (tab) {
+    switchView("files");
+    setStatus(`Created local file ${normalizedPath} · sign in to save to GitHub`);
+  }
 }
 
 function applyCodeToEditor(code, lang) {
@@ -1358,7 +1396,7 @@ function applyCodeToEditor(code, lang) {
   const hint = guessFilenameFromCode(text, lang);
   text = stripFilenameMarker(text, hint);
   let targetTab = findTabByPathHint(hint);
-  if (!targetTab && hint && state.currentRepo) {
+  if (!targetTab && hint) {
     targetTab = createGeneratedTab(hint, "", lang);
   }
   if (targetTab && targetTab.id !== state.activeTabId) {
@@ -1655,6 +1693,8 @@ function bindEvents() {
   $("#btn-github-login") && ($("#btn-github-login").onclick = connectGitHub);
   $("#btn-github-login-welcome") && ($("#btn-github-login-welcome").onclick = connectGitHub);
   $("#btn-token").onclick = openTokenModal;
+  $("#btn-new-file").onclick = createLocalFile;
+  $("#btn-new-file-welcome").onclick = createLocalFile;
   $("#btn-cancel-token").onclick = closeTokenModal;
   $("#btn-save-token").onclick = saveToken;
   $("#btn-save-file").onclick = saveCurrentFile;

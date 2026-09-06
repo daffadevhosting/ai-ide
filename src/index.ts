@@ -1173,7 +1173,7 @@ export default {
       if (path === "/api/version" && request.method === "GET") {
         return json({
           name: "Lumen AI-IDE",
-          version: "2026.09.01-j",
+          version: "2026.09.07-pro",
           features: [
             "streaming-ai",
             "multi-tab",
@@ -1183,6 +1183,7 @@ export default {
             "collapsible-panels",
             "inline-complete",
             "neuron-quota-gate",
+            "paypal-pro-subscriptions",
           ],
           oauthConfigured: Boolean(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET),
         });

@@ -10,6 +10,15 @@ Live example: `https://lumen.studiocode.workers.dev/`
 
 ## Changelog
 
+### 2026-09-08
+
+- Made Codebase RAG a Pro-only feature with server-side access control for indexing, search, and AI context retrieval.
+- Added PayPal Pro subscription cancellation through the new `/api/pro/cancel` endpoint.
+- Hid upgrade buttons for active Pro users and added a Cancel Pro action.
+- Added adaptive AI language behavior: Bahasa Indonesia by default, with automatic adaptation to the user's language.
+- Added a glowing AI input border while the assistant is processing.
+- Changed AI chat input behavior: Enter sends and Shift+Enter creates a new line.
+
 ### 2026-09-05
 
 - Added VS Code-like save workflow: local **Save**, split-screen **Diff**, and commit only saved changes.

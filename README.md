@@ -35,6 +35,7 @@ Live example: `https://lumen.studiocode.workers.dev/`
 | **Codebase RAG (Pro)** | Pro-only repository indexing in Cloudflare Vectorize and semantic context for AI prompts |
 | **Multi-file patches** | Commit several saved files atomically through the Git Trees API |
 | **AI Terminal** | Translate natural-language Git/CLI requests into reviewable commands without executing them |
+| **Adaptive language** | Uses Bahasa Indonesia by default and follows the language used in the user's request |
 | **Repository search** | Search repositories by name, full name, or description |
 | **Reviews** | Separate review tab with star ratings, comments, anonymous/GitHub authors, and owner editing |
 | **Lumen Pro** | PayPal subscription checkout linked to a GitHub account; bypasses the app quota gate |

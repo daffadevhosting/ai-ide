@@ -632,6 +632,12 @@ Language: ${language}. File: ${filename}.`,
   }
 
   // ----- Panel AI (heavy model) -----
+  const languagePolicy = `Language policy:
+- Default to Bahasa Indonesia for explanations, reviews, summaries, and conversational text.
+- Detect the dominant language of the user's latest request and answer in that language when it is clearly not Indonesian.
+- Do not translate source code, identifiers, file paths, CLI commands, JSON keys, markdown syntax, or API names.
+- Keep technical terms in English when that is the standard term, and preserve the requested output format.`;
+
   const systemPrompts: Record<string, string> = {
     terminal: `You are a careful developer terminal assistant. Translate the user's request into one safe, copy-pasteable CLI command or a short ordered command list. Never execute it. Return valid JSON only with keys command, explanation, risk. Prefer reversible commands, show a dry-run flag when available, and explain destructive steps. For Git commands, assume the user wants local changes only unless they explicitly ask to push.`,
     review: `You are Lumen, an expert code reviewer inside an IDE.
@@ -669,7 +675,7 @@ Be accurate, concise, and practical.
 Preserve every numeric literal in code exactly (do not drop zeros).`,
   };
 
-  const system = systemPrompts[body.action] || systemPrompts.chat;
+  const system = `${systemPrompts[body.action] || systemPrompts.chat}\n\n${languagePolicy}`;
 
   let userContent = body.prompt || "";
   if (body.code) {

@@ -1629,6 +1629,12 @@ function finishMessage(div, fullText) {
   enhanceCodeBlocks(div);
 }
 
+function setAIThinking(thinking) {
+  const input = $("#ai-input");
+  input?.classList.toggle("ai-thinking", thinking);
+  input?.setAttribute("aria-busy", thinking ? "true" : "false");
+}
+
 async function sendAI() {
   if (state.streaming) return;
   if (lastQuota?.blocked) {
@@ -1660,6 +1666,7 @@ async function sendAI() {
   input.value = "";
   setStatus("AI streaming...");
   state.streaming = true;
+  setAIThinking(true);
 
   const assistantDiv = addMessage("assistant", "", true);
   let fullText = "";
@@ -1762,6 +1769,7 @@ async function sendAI() {
     checkQuota();
   } finally {
     state.streaming = false;
+    setAIThinking(false);
   }
 }
 
@@ -1921,7 +1929,7 @@ function bindEvents() {
   };
 
   $("#ai-input").addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       sendAI();
     }

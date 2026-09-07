@@ -799,6 +799,23 @@ html, body {
   outline: none;
 }
 #ai-input:focus { border-color: var(--accent); }
+#ai-input.ai-thinking {
+  border-color: var(--accent);
+  animation: ai-input-glow 1.35s ease-in-out infinite;
+}
+
+@keyframes ai-input-glow {
+  0%, 100% {
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent), 0 0 8px color-mix(in srgb, var(--accent) 20%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent), 0 0 18px color-mix(in srgb, var(--accent) 48%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #ai-input.ai-thinking { animation: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 50%, transparent); }
+}
 
 .ai-input-actions {
   display: flex;

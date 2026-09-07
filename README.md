@@ -32,6 +32,9 @@ Live example: `https://lumen.studiocode.workers.dev/`
 | **GitHub** | OAuth **Connect GitHub**, or manual PAT; list repos, file tree, open/edit, commit |
 | **GitHub App** | Optional JWT (RS256) + installation token for server-side auth |
 | **Git workflow** | Save locally, compare with split-screen diff, commit saved changes, AI commit messages |
+| **Codebase RAG** | Index repository chunks in Cloudflare Vectorize and retrieve semantic context for AI prompts |
+| **Multi-file patches** | Commit several saved files atomically through the Git Trees API |
+| **AI Terminal** | Translate natural-language Git/CLI requests into reviewable commands without executing them |
 | **Repository search** | Search repositories by name, full name, or description |
 | **Reviews** | Separate review tab with star ratings, comments, anonymous/GitHub authors, and owner editing |
 | **Lumen Pro** | PayPal subscription checkout linked to a GitHub account; bypasses the app quota gate |
@@ -175,6 +178,9 @@ cannot bypass Cloudflare's own account-level free allocation.
 | `GET` | `/api/tree/:owner/:repo` | Directory listing (`?path=&branch=`) |
 | `GET` | `/api/file/:owner/:repo/*` | File content |
 | `POST` | `/api/commit` | Create/update file (commit) |
+| `POST` | `/api/multi-commit` | Atomically commit several files in one Git commit |
+| `POST` | `/api/repo/index` | Embed and index the current repository in Vectorize |
+| `POST` | `/api/repo/search` | Semantic search over indexed repository code |
 | `POST` | `/api/create-repo` | Create repository |
 | `GET` | `/api/reviews` | List reviews and rating summary |
 | `POST` | `/api/reviews` | Create an anonymous or GitHub-authenticated review |
@@ -182,6 +188,7 @@ cannot bypass Cloudflare's own account-level free allocation.
 | `POST` | `/api/pro/subscribe` | Create a PayPal subscription approval URL |
 | `POST` | `/api/pro/activate` | Verify and activate an approved subscription |
 | `GET` | `/api/pro/status` | Return the current GitHub user's Pro status |
+| `POST` | `/api/pro/cancel` | Cancel the authenticated user's PayPal Pro subscription |
 
 GitHub routes accept header:
 
@@ -199,6 +206,18 @@ Panel modes:
 - **Review Code** — critique current file / selection  
 - **Fix / Edit** — return fixed code in a fenced block  
 - **Create Code** — generate new code  
+- **Terminal Command** — produce a reviewable CLI/Git command; the Worker never executes it
+
+### Codebase RAG setup
+
+Create the Vectorize index once, then deploy the Worker:
+
+```bash
+npx wrangler vectorize create lumen-codebase --dimensions=768 --metric=cosine
+npx wrangler deploy
+```
+
+Select a repository and click the database icon in the AI panel to index it. Subsequent AI prompts automatically retrieve relevant indexed chunks. Without the `VECTORIZE` binding, normal AI features continue to work.
 
 Streaming uses Server-Sent Events (`text/event-stream`).  
 **Apply to editor** pastes the first code block into the active tab.
@@ -229,6 +248,7 @@ Bindings (wrangler.toml):
 - `REVIEWS` — Cloudflare KV namespace for webapp reviews
 - `SESSIONS` — session KV namespace
 - `USAGE` — neuron usage and quota KV namespace
+- `VECTORIZE` — `lumen-codebase` semantic code index
 
 ---
 

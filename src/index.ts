@@ -6,6 +6,7 @@
 export interface Env {
   AI: Ai;
   ASSETS: Fetcher;
+  VECTORIZE?: VectorizeIndex;
   /** Optional KV for daily neuron usage counters */
   USAGE?: KVNamespace;
   GITHUB_TOKEN?: string;
@@ -69,7 +70,23 @@ const NEURON_COST: Record<string, number> = {
   review: 550,
   fix: 550,
   create: 550,
+  terminal: 450,
 };
+
+const EMBEDDING_MODEL = "@cf/baai/bge-base-en-v1.5";
+
+type RepoFileChange = { path: string; content: string; sha?: string };
+
+function isVectorizeConfigured(env: Env): env is Env & { VECTORIZE: VectorizeIndex } {
+  return Boolean(env.VECTORIZE);
+}
+
+async function embedText(env: Env, text: string): Promise<number[]> {
+  const result = await env.AI.run(EMBEDDING_MODEL as any, { text: [text.slice(0, 8000)] });
+  const data = (result as { data?: number[][] }).data;
+  if (!data?.[0]) throw new Error("Embedding model returned no vector");
+  return data[0];
+}
 
 function utcDayKey(d = new Date()): string {
   return d.toISOString().slice(0, 10); // YYYY-MM-DD UTC
@@ -440,6 +457,91 @@ async function githubFetch(path: string, token: string, options: RequestInit = {
   return res;
 }
 
+function repoVectorId(owner: string, repo: string, path: string, chunk: number): string {
+  return `${owner}/${repo}:${path}:${chunk}`.replace(/[^a-zA-Z0-9._:-]/g, "_").slice(0, 512);
+}
+
+function isIndexablePath(path: string): boolean {
+  return !/(^|\/)(node_modules|\.git|dist|build|coverage)(\/|$)/i.test(path) &&
+    !/\.(png|jpe?g|gif|webp|ico|pdf|zip|woff2?|ttf|mp[34]|wasm)$/i.test(path);
+}
+
+async function handleRepoIndex(request: Request, env: Env): Promise<Response> {
+  if (!isVectorizeConfigured(env)) return error("Vectorize is not configured. Add a VECTORIZE binding.", 503);
+  const token = await getGitHubToken(env, request);
+  if (!token) return error("GitHub token required", 401);
+  const body = (await request.json()) as { owner: string; repo: string; branch?: string };
+  if (!body.owner || !body.repo) return error("Missing owner and repo");
+  const branch = body.branch || "main";
+
+  try {
+    const treeRes = await githubFetch(
+      `/repos/${body.owner}/${body.repo}/git/trees/${encodeURIComponent(branch)}?recursive=1`, token
+    );
+    const tree = (await treeRes.json()) as { tree?: Array<{ path: string; type: string; size?: number }> };
+    const files = (tree.tree || []).filter((entry) => entry.type === "blob" && isIndexablePath(entry.path) && (entry.size || 0) <= 100000).slice(0, 300);
+    let chunks = 0;
+    for (const file of files) {
+      const fileRes = await githubFetch(`/repos/${body.owner}/${body.repo}/contents/${file.path}?ref=${encodeURIComponent(branch)}`, token);
+      const data = (await fileRes.json()) as { content?: string; encoding?: string };
+      if (!data.content || data.encoding !== "base64") continue;
+      const content = decodeBase64Utf8(data.content);
+      const parts = content.match(/[\s\S]{1,5000}/g) || [];
+      const vectors = [];
+      for (let index = 0; index < parts.length; index += 1) {
+        const text = `Repository: ${body.owner}/${body.repo}\nFile: ${file.path}\nChunk: ${index + 1}\n${parts[index]}`;
+        vectors.push({ id: repoVectorId(body.owner, body.repo, file.path, index), values: await embedText(env, text), metadata: { owner: body.owner, repo: body.repo, branch, path: file.path, chunk: index, text: parts[index] } });
+      }
+      if (vectors.length) {
+        await env.VECTORIZE.upsert(vectors as any);
+        chunks += vectors.length;
+      }
+    }
+    return json({ indexedFiles: files.length, indexedChunks: chunks, owner: body.owner, repo: body.repo, branch });
+  } catch (e: any) {
+    return error(`Repository indexing error: ${e.message}`, 500);
+  }
+}
+
+async function handleRepoSearch(request: Request, env: Env): Promise<Response> {
+  if (!isVectorizeConfigured(env)) return error("Vectorize is not configured. Add a VECTORIZE binding.", 503);
+  const body = (await request.json()) as { owner: string; repo: string; query: string; topK?: number };
+  if (!body.owner || !body.repo || !body.query) return error("Missing owner, repo, or query");
+  try {
+    const vector = await embedText(env, body.query);
+    const result = await env.VECTORIZE.query(vector, { topK: Math.min(Math.max(body.topK || 6, 1), 20), returnMetadata: "all", filter: { owner: body.owner, repo: body.repo } } as any);
+    const matches = (result.matches || []).filter((match: any) => match.metadata?.owner === body.owner && match.metadata?.repo === body.repo).map((match: any) => ({ score: match.score, ...match.metadata }));
+    return json({ matches });
+  } catch (e: any) {
+    return error(`Repository search error: ${e.message}`, 500);
+  }
+}
+
+async function handleMultiCommit(request: Request, env: Env): Promise<Response> {
+  const token = await getGitHubToken(env, request);
+  if (!token) return error("GitHub token required", 401);
+  const body = (await request.json()) as { owner: string; repo: string; branch?: string; message: string; files: RepoFileChange[] };
+  if (!body.owner || !body.repo || !body.message || !Array.isArray(body.files) || !body.files.length) return error("Missing repository, message, or files");
+  const branch = body.branch || "main";
+  try {
+    const ref = (await (await githubFetch(`/repos/${body.owner}/${body.repo}/git/ref/heads/${encodeURIComponent(branch)}`, token)).json()) as any;
+    const parentSha = ref.object?.sha;
+    if (!parentSha) throw new Error("Branch head not found");
+    const parent = (await (await githubFetch(`/repos/${body.owner}/${body.repo}/git/commits/${parentSha}`, token)).json()) as any;
+    const treeEntries = [];
+    for (const file of body.files) {
+      const blob = (await (await githubFetch(`/repos/${body.owner}/${body.repo}/git/blobs`, token, { method: "POST", body: JSON.stringify({ content: btoa(unescape(encodeURIComponent(file.content))), encoding: "base64" }) })).json()) as any;
+      treeEntries.push({ path: file.path, mode: "100644", type: "blob", sha: blob.sha });
+    }
+    const tree = (await (await githubFetch(`/repos/${body.owner}/${body.repo}/git/trees`, token, { method: "POST", body: JSON.stringify({ base_tree: parent.tree?.sha, tree: treeEntries }) })).json()) as any;
+    const commit = (await (await githubFetch(`/repos/${body.owner}/${body.repo}/git/commits`, token, { method: "POST", body: JSON.stringify({ message: body.message, tree: tree.sha, parents: [parentSha], author: { name: "Lumen AI-IDE", email: "lumen@users.noreply.github.com" }, committer: { name: "Lumen AI-IDE", email: "lumen@users.noreply.github.com" } }) })).json()) as any;
+    await githubFetch(`/repos/${body.owner}/${body.repo}/git/refs/heads/${encodeURIComponent(branch)}`, token, { method: "PATCH", body: JSON.stringify({ sha: commit.sha, force: false }) });
+    return json({ commit: commit.sha, files: body.files.map((file) => file.path), message: body.message });
+  } catch (e: any) {
+    return error(`Multi-file commit error: ${e.message}`, 500);
+  }
+}
+
 // ---------- AI ----------
 
 function extractAIText(result: unknown): string {
@@ -465,7 +567,7 @@ function cleanCompletion(raw: string): string {
 
 async function handleAI(request: Request, env: Env): Promise<Response> {
   const body = (await request.json()) as {
-    action: "review" | "fix" | "create" | "chat" | "complete";
+    action: "review" | "fix" | "create" | "chat" | "complete" | "terminal";
     code?: string;
     language?: string;
     prompt?: string;
@@ -474,6 +576,7 @@ async function handleAI(request: Request, env: Env): Promise<Response> {
     prefix?: string;
     suffix?: string;
     stream?: boolean;
+    repo?: { owner: string; name: string; branch?: string };
   };
 
   // Soft / hard neuron gate (estimate + Cloudflare exhausted flag)
@@ -526,6 +629,7 @@ Language: ${language}. File: ${filename}.`,
 
   // ----- Panel AI (heavy model) -----
   const systemPrompts: Record<string, string> = {
+    terminal: `You are a careful developer terminal assistant. Translate the user's request into one safe, copy-pasteable CLI command or a short ordered command list. Never execute it. Return valid JSON only with keys command, explanation, risk. Prefer reversible commands, show a dry-run flag when available, and explain destructive steps. For Git commands, assume the user wants local changes only unless they explicitly ask to push.`,
     review: `You are Lumen, an expert code reviewer inside an IDE.
 Review the code for correctness, bugs, security issues, performance, edge cases, and maintainability.
 Structure the response as:
@@ -570,12 +674,25 @@ Preserve every numeric literal in code exactly (do not drop zeros).`,
   if (body.filename) userContent = `File: ${body.filename}\n\n` + userContent;
   if (body.context) userContent += `\n\nAdditional context:\n${body.context}`;
 
+  if (body.repo && isVectorizeConfigured(env) && body.prompt) {
+    try {
+      const vector = await embedText(env, body.prompt);
+      const search = await env.VECTORIZE.query(vector, { topK: 8, returnMetadata: "all", filter: { owner: body.repo.owner, repo: body.repo.name } } as any);
+      const matches = (search.matches || []).filter((match: any) => match.metadata?.owner === body.repo?.owner && match.metadata?.repo === body.repo?.name);
+      if (matches.length) {
+        userContent += "\n\nRelevant repository context from semantic search:\n" + matches.map((match: any) => `FILE: ${match.metadata.path}\n${match.metadata.text}`).join("\n\n").slice(0, 30000);
+      }
+    } catch {
+      // RAG is an optional enhancement; the normal AI request remains available.
+    }
+  }
+
   const messages = [
     { role: "system", content: system },
     { role: "user", content: userContent },
   ];
 
-  const wantStream = body.stream !== false;
+  const wantStream = body.action !== "terminal" && body.stream !== false;
 
   const inferenceInput: Record<string, unknown> = {
     messages,
@@ -607,8 +724,17 @@ Preserve every numeric literal in code exactly (do not drop zeros).`,
     });
     await addNeuronUsage(env, cost);
 
+    const rawResult = extractAIText(result);
+    if (body.action === "terminal") {
+      const fenced = rawResult.match(/\{[\s\S]*\}/);
+      try {
+        return json({ result: JSON.parse(fenced?.[0] || rawResult), model: CODE_MODEL, quota: await buildQuotaStatus(env, request) });
+      } catch {
+        return json({ result: { command: cleanCompletion(rawResult), explanation: "Review this command before running it.", risk: "unknown" }, model: CODE_MODEL, quota: await buildQuotaStatus(env, request) });
+      }
+    }
     return json({
-      result: extractAIText(result),
+      result: rawResult,
       model: CODE_MODEL,
       quota: await buildQuotaStatus(env, request),
     });
@@ -706,6 +832,26 @@ async function handleProActivate(request: Request, env: Env): Promise<Response> 
 async function handleProStatus(request: Request, env: Env): Promise<Response> {
   const pro = await getProStatus(request, env);
   return json({ pro: pro.active, login: pro.login, subscription: pro.subscription });
+}
+
+async function handleProCancel(request: Request, env: Env): Promise<Response> {
+  const login = await getExplicitGitHubLogin(request, env);
+  if (!login || !env.USAGE) return error("Connect GitHub before cancelling Pro", 401);
+  const key = `pro:subscription:${login}`;
+  const subscription = (await env.USAGE.get(key, "json")) as ProSubscription | null;
+  if (!subscription?.id) return error("No active Pro subscription found", 404);
+
+  try {
+    await paypalFetch(env, `/v1/billing/subscriptions/${encodeURIComponent(subscription.id)}/cancel`, {
+      method: "POST",
+      body: JSON.stringify({ reason: "Cancelled by subscriber in Lumen" }),
+    });
+    const cancelled: ProSubscription = { ...subscription, status: "CANCELLED", checkedAt: Date.now() };
+    await env.USAGE.put(key, JSON.stringify(cancelled), { expirationTtl: 60 * 60 * 24 * 370 });
+    return json({ pro: false, subscription: cancelled });
+  } catch (e: any) {
+    return error(`Could not cancel Pro subscription: ${e.message}`, 502);
+  }
 }
 
 async function handleRepos(request: Request, env: Env): Promise<Response> {
@@ -1142,11 +1288,23 @@ export default {
       if (path === "/api/pro/status" && request.method === "GET") {
         return handleProStatus(request, env);
       }
+      if (path === "/api/pro/cancel" && request.method === "POST") {
+        return handleProCancel(request, env);
+      }
       if (path === "/api/repos" && request.method === "GET") {
         return handleRepos(request, env);
       }
       if (path === "/api/commit" && request.method === "POST") {
         return handleCommit(request, env);
+      }
+      if (path === "/api/multi-commit" && request.method === "POST") {
+        return handleMultiCommit(request, env);
+      }
+      if (path === "/api/repo/index" && request.method === "POST") {
+        return handleRepoIndex(request, env);
+      }
+      if (path === "/api/repo/search" && request.method === "POST") {
+        return handleRepoSearch(request, env);
       }
       if (path === "/api/create-repo" && request.method === "POST") {
         return handleCreateRepo(request, env);
@@ -1184,6 +1342,9 @@ export default {
             "inline-complete",
             "neuron-quota-gate",
             "paypal-pro-subscriptions",
+            "vectorize-codebase-rag",
+            "multi-file-atomic-commits",
+            "ai-terminal-interpreter",
           ],
           oauthConfigured: Boolean(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET),
         });

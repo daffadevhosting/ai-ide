@@ -6,6 +6,11 @@ compatibility_flags = ["nodejs_compat"]
 [ai]
 binding = "AI"
 
+# Create once with: npx wrangler vectorize create lumen-codebase --dimensions=768 --metric=cosine
+[[vectorize]]
+binding = "VECTORIZE"
+index_name = "lumen-codebase"
+
 [assets]
 directory = "./public"
 binding = "ASSETS"
@@ -39,7 +44,7 @@ persist = true
 head_sampling_rate = 1
 
 [vars]
-PAYPAL_PLAN_ID = "P-4VP99007SK2746208NKO5E5Y"
-PAYPAL_MODE = "live"
+PAYPAL_PLAN_ID = "P-93L51419HN197653ENKPRUAA"
+PAYPAL_MODE = "sandbox"
 NEURON_DAILY_LIMIT = "10000"
 NEURON_SOFT_LIMIT = "9500"

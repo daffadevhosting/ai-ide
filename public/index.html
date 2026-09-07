@@ -59,6 +59,9 @@
         <button id="btn-get-pro" class="btn pro btn-label" title="Upgrade to Lumen Pro">
           <i class="fa-solid fa-crown"></i> <span class="label">Get Pro</span>
         </button>
+        <button id="btn-cancel-pro" class="btn ghost btn-label hidden" title="Cancel Lumen Pro subscription">
+          <i class="fa-solid fa-ban"></i> <span class="label">Cancel Pro</span>
+        </button>
         <button id="btn-new-file" class="btn ghost btn-label" title="Create a local file">
           <i class="fa-solid fa-file-circle-plus"></i> <span class="label">New</span>
         </button>
@@ -177,14 +180,19 @@
                 <li data-value="review">Review Code</li>
                 <li data-value="fix">Fix / Edit</li>
                 <li data-value="create">Create Code</li>
+                <li data-value="terminal">Terminal Command</li>
               </ul>
               <select id="ai-action" class="sr-only" aria-hidden="true">
                 <option value="chat">Chat</option>
                 <option value="review">Review Code</option>
                 <option value="fix">Fix / Edit</option>
                 <option value="create">Create Code</option>
+                <option value="terminal">Terminal Command</option>
               </select>
             </div>
+            <button id="btn-index-repo" class="icon-btn" title="Index current repository for semantic search">
+              <i class="fa-solid fa-database"></i>
+            </button>
             <button id="btn-close-ai" class="icon-btn" title="Close">
               <i class="fa-solid fa-xmark"></i>
             </button>

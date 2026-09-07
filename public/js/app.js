@@ -173,8 +173,9 @@ function formatNeuronStatus(q) {
 
 function updateNeuronBar(q) {
   const el = $("#status-right");
-  if (!el) return;
   if (q) lastQuota = q;
+  updateProButtons(lastQuota);
+  if (!el) return;
   const text = formatNeuronStatus(lastQuota);
   el.textContent = text;
   el.classList.toggle("neuron-warn", Boolean(lastQuota && !lastQuota.pro && (lastQuota.blocked || lastQuota.used >= (lastQuota.softLimit || lastQuota.limit) * 0.85)));
@@ -378,6 +379,31 @@ async function startProCheckout() {
     window.location.href = data.approvalUrl;
   } catch (e) {
     await ui.alert(e.message, "Pro checkout failed");
+  }
+}
+
+function updateProButtons(quota) {
+  const active = Boolean(quota?.pro);
+  $("#btn-get-pro")?.classList.toggle("hidden", active);
+  $("#btn-cancel-pro")?.classList.toggle("hidden", !active);
+  $("#btn-quota-get-pro")?.classList.toggle("hidden", active);
+}
+
+async function cancelProSubscription() {
+  if (!lastQuota?.pro) return;
+  const confirmed = await ui.confirm(
+    "Cancel your Lumen Pro subscription? PayPal will stop future renewals.",
+    "Cancel Pro subscription"
+  );
+  if (!confirmed) return;
+  try {
+    setStatus("Cancelling Lumen Pro...");
+    await api("/api/pro/cancel", { method: "POST", body: "{}" });
+    updateProButtons({ pro: false });
+    await checkQuota(true);
+    setStatus("Lumen Pro subscription cancelled");
+  } catch (e) {
+    await ui.alert(e.message, "Cancellation failed");
   }
 }
 
@@ -1112,22 +1138,19 @@ async function commitFile() {
 
   setStatus(`Committing ${pendingTabs.length} file${pendingTabs.length === 1 ? "" : "s"}...`);
   try {
+    await api("/api/multi-commit", {
+      method: "POST",
+      body: JSON.stringify({
+        owner: state.currentRepo.owner,
+        repo: state.currentRepo.name,
+        branch: state.currentRepo.default_branch,
+        message,
+        files: pendingTabs.map((tab) => ({ path: tab.path, content: tab.savedContent, sha: tab.sha })),
+      }),
+    });
     for (const tab of pendingTabs) {
-      const result = await api("/api/commit", {
-        method: "POST",
-        body: JSON.stringify({
-          owner: tab.owner,
-          repo: tab.repo,
-          path: tab.path,
-          content: tab.savedContent,
-          message,
-          branch: tab.branch,
-          sha: tab.sha,
-        }),
-      });
       tab.remoteContent = tab.savedContent;
       tab.content = tab.savedContent;
-      tab.sha = result.content?.sha || tab.sha;
     }
     renderTabs();
     await loadTree(state.currentPath);
@@ -1135,6 +1158,23 @@ async function commitFile() {
   } catch (e) {
     setStatus(`Commit failed: ${e.message}`);
     await ui.alert("Commit failed: " + e.message, "Commit error");
+  }
+}
+
+async function indexCurrentRepository() {
+  const repo = state.currentRepo;
+  if (!repo) return ui.alert("Select a repository first.", "Codebase index");
+  const button = $("#btn-index-repo");
+  button.disabled = true;
+  setStatus(`Indexing ${repo.owner}/${repo.name}...`);
+  try {
+    const result = await api("/api/repo/index", { method: "POST", body: JSON.stringify({ owner: repo.owner, repo: repo.name, branch: repo.default_branch }) });
+    setStatus(`Indexed ${result.indexedFiles} files · ${result.indexedChunks} code chunks`);
+  } catch (e) {
+    await ui.alert(e.message, "Codebase index");
+    setStatus("Codebase index failed");
+  } finally {
+    button.disabled = false;
   }
 }
 
@@ -1602,6 +1642,25 @@ async function sendAI() {
   let fullText = "";
 
   try {
+    if (action === "terminal") {
+      const data = await api("/api/ai", {
+        method: "POST",
+        body: JSON.stringify({
+          action,
+          prompt,
+          context: buildAIContext(),
+          repo: state.currentRepo
+            ? { owner: state.currentRepo.owner, name: state.currentRepo.name, branch: state.currentRepo.default_branch }
+            : undefined,
+          stream: false,
+        }),
+      });
+      if (data.quota) updateNeuronBar(data.quota);
+      const command = data.result || {};
+      finishMessage(assistantDiv, `**Command**\n\n\`${command.command || "(no command)"}\`\n\n${command.explanation || "Review before running."}\n\n**Risk:** ${command.risk || "unknown"}`);
+      setStatus("Terminal command ready");
+      return;
+    }
     const res = await api("/api/ai", {
       method: "POST",
       stream: true,
@@ -1612,6 +1671,9 @@ async function sendAI() {
         language,
         filename: getActiveTab()?.path,
         context: buildAIContext(),
+        repo: state.currentRepo
+          ? { owner: state.currentRepo.owner, name: state.currentRepo.name, branch: state.currentRepo.default_branch }
+          : undefined,
         stream: true,
       }),
     });
@@ -1740,6 +1802,7 @@ function bindEvents() {
   $("#btn-github-login-welcome") && ($("#btn-github-login-welcome").onclick = connectGitHub);
   $("#btn-token").onclick = openTokenModal;
   $("#btn-get-pro").onclick = startProCheckout;
+  $("#btn-cancel-pro").onclick = cancelProSubscription;
   $("#btn-quota-get-pro").onclick = startProCheckout;
   $("#btn-new-file").onclick = createLocalFile;
   $("#btn-new-file-welcome").onclick = createLocalFile;
@@ -1764,6 +1827,7 @@ function bindEvents() {
   $("#btn-ai-toggle").onclick = toggleAI;
   $("#btn-close-ai").onclick = () => setAIOpen(false);
   $("#btn-send-ai").onclick = sendAI;
+  $("#btn-index-repo").onclick = indexCurrentRepository;
   $("#btn-theme").onclick = toggleTheme;
   $("#btn-sidebar").onclick = toggleSidebar;
   $("#btn-sidebar-close").onclick = () => setSidebarOpen(false);
@@ -1940,6 +2004,7 @@ async function checkQuota(forceUnlockAttempt) {
   try {
     const q = await api("/api/quota");
     lastQuota = q;
+    updateProButtons(q);
     updateNeuronBar(q);
     if (q.blocked && !q.pro) {
       setQuotaLock(true, q);

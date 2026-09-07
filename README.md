@@ -4,7 +4,7 @@
 
 Modern flat minimalist AI-powered IDE on [Cloudflare Workers](https://workers.cloudflare.com/), with Workers AI, GitHub OAuth, and a VS Code–like editor.
 
-Live example: `https://lumen.backendku.workers.dev/`
+Live example: `https://lumen.studiocode.workers.dev/`
 
 ---
 

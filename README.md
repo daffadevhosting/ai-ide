@@ -32,7 +32,7 @@ Live example: `https://lumen.studiocode.workers.dev/`
 | **GitHub** | OAuth **Connect GitHub**, or manual PAT; list repos, file tree, open/edit, commit |
 | **GitHub App** | Optional JWT (RS256) + installation token for server-side auth |
 | **Git workflow** | Save locally, compare with split-screen diff, commit saved changes, AI commit messages |
-| **Codebase RAG** | Index repository chunks in Cloudflare Vectorize and retrieve semantic context for AI prompts |
+| **Codebase RAG (Pro)** | Pro-only repository indexing in Cloudflare Vectorize and semantic context for AI prompts |
 | **Multi-file patches** | Commit several saved files atomically through the Git Trees API |
 | **AI Terminal** | Translate natural-language Git/CLI requests into reviewable commands without executing them |
 | **Repository search** | Search repositories by name, full name, or description |
@@ -179,8 +179,8 @@ cannot bypass Cloudflare's own account-level free allocation.
 | `GET` | `/api/file/:owner/:repo/*` | File content |
 | `POST` | `/api/commit` | Create/update file (commit) |
 | `POST` | `/api/multi-commit` | Atomically commit several files in one Git commit |
-| `POST` | `/api/repo/index` | Embed and index the current repository in Vectorize |
-| `POST` | `/api/repo/search` | Semantic search over indexed repository code |
+| `POST` | `/api/repo/index` | Pro-only embedding and indexing of the current repository in Vectorize |
+| `POST` | `/api/repo/search` | Pro-only semantic search over indexed repository code |
 | `POST` | `/api/create-repo` | Create repository |
 | `GET` | `/api/reviews` | List reviews and rating summary |
 | `POST` | `/api/reviews` | Create an anonymous or GitHub-authenticated review |
@@ -217,7 +217,7 @@ npx wrangler vectorize create lumen-codebase --dimensions=768 --metric=cosine
 npx wrangler deploy
 ```
 
-Select a repository and click the database icon in the AI panel to index it. Subsequent AI prompts automatically retrieve relevant indexed chunks. Without the `VECTORIZE` binding, normal AI features continue to work.
+Select a repository and click the database icon in the AI panel to index it. This feature requires an active Lumen Pro subscription. Subsequent AI prompts automatically retrieve relevant indexed chunks for Pro users. Without the `VECTORIZE` binding, normal AI features continue to work.
 
 Streaming uses Server-Sent Events (`text/event-stream`).  
 **Apply to editor** pastes the first code block into the active tab.

@@ -148,7 +148,11 @@ async function api(path, options = {}) {
   const res = await fetch(path, { ...options, headers });
   if (options.stream) return res;
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || res.statusText);
+  if (!res.ok) {
+    const err = new Error(data.error || res.statusText);
+    err.code = data.code;
+    throw err;
+  }
   return data;
 }
 
@@ -387,6 +391,12 @@ function updateProButtons(quota) {
   $("#btn-get-pro")?.classList.toggle("hidden", active);
   $("#btn-cancel-pro")?.classList.toggle("hidden", !active);
   $("#btn-quota-get-pro")?.classList.toggle("hidden", active);
+  const indexButton = $("#btn-index-repo");
+  if (indexButton) {
+    indexButton.title = active
+      ? "Index current repository for semantic search"
+      : "Codebase RAG is available with Lumen Pro";
+  }
 }
 
 async function cancelProSubscription() {
@@ -1164,6 +1174,15 @@ async function commitFile() {
 async function indexCurrentRepository() {
   const repo = state.currentRepo;
   if (!repo) return ui.alert("Select a repository first.", "Codebase index");
+  if (!lastQuota) await checkQuota();
+  if (!lastQuota?.pro) {
+    const upgrade = await ui.confirm(
+      "Codebase RAG is a Lumen Pro feature. Upgrade to index and search this repository.",
+      "Codebase RAG"
+    );
+    if (upgrade) await startProCheckout();
+    return;
+  }
   const button = $("#btn-index-repo");
   button.disabled = true;
   setStatus(`Indexing ${repo.owner}/${repo.name}...`);
@@ -1171,7 +1190,11 @@ async function indexCurrentRepository() {
     const result = await api("/api/repo/index", { method: "POST", body: JSON.stringify({ owner: repo.owner, repo: repo.name, branch: repo.default_branch }) });
     setStatus(`Indexed ${result.indexedFiles} files · ${result.indexedChunks} code chunks`);
   } catch (e) {
-    await ui.alert(e.message, "Codebase index");
+    if (e.code === "PRO_REQUIRED") {
+      await ui.alert("Codebase RAG is available for Lumen Pro users.", "Upgrade to Lumen Pro");
+    } else {
+      await ui.alert(e.message, "Codebase index");
+    }
     setStatus("Codebase index failed");
   } finally {
     button.disabled = false;

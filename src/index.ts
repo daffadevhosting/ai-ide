@@ -467,6 +467,8 @@ function isIndexablePath(path: string): boolean {
 }
 
 async function handleRepoIndex(request: Request, env: Env): Promise<Response> {
+  const pro = await getProStatus(request, env);
+  if (!pro.active) return json({ error: "Codebase RAG is available for Lumen Pro users.", code: "PRO_REQUIRED" }, 403);
   if (!isVectorizeConfigured(env)) return error("Vectorize is not configured. Add a VECTORIZE binding.", 503);
   const token = await getGitHubToken(env, request);
   if (!token) return error("GitHub token required", 401);
@@ -504,6 +506,8 @@ async function handleRepoIndex(request: Request, env: Env): Promise<Response> {
 }
 
 async function handleRepoSearch(request: Request, env: Env): Promise<Response> {
+  const pro = await getProStatus(request, env);
+  if (!pro.active) return json({ error: "Codebase RAG is available for Lumen Pro users.", code: "PRO_REQUIRED" }, 403);
   if (!isVectorizeConfigured(env)) return error("Vectorize is not configured. Add a VECTORIZE binding.", 503);
   const body = (await request.json()) as { owner: string; repo: string; query: string; topK?: number };
   if (!body.owner || !body.repo || !body.query) return error("Missing owner, repo, or query");
@@ -676,11 +680,14 @@ Preserve every numeric literal in code exactly (do not drop zeros).`,
 
   if (body.repo && isVectorizeConfigured(env) && body.prompt) {
     try {
-      const vector = await embedText(env, body.prompt);
-      const search = await env.VECTORIZE.query(vector, { topK: 8, returnMetadata: "all", filter: { owner: body.repo.owner, repo: body.repo.name } } as any);
-      const matches = (search.matches || []).filter((match: any) => match.metadata?.owner === body.repo?.owner && match.metadata?.repo === body.repo?.name);
-      if (matches.length) {
-        userContent += "\n\nRelevant repository context from semantic search:\n" + matches.map((match: any) => `FILE: ${match.metadata.path}\n${match.metadata.text}`).join("\n\n").slice(0, 30000);
+      const pro = await getProStatus(request, env);
+      if (pro.active) {
+        const vector = await embedText(env, body.prompt);
+        const search = await env.VECTORIZE.query(vector, { topK: 8, returnMetadata: "all", filter: { owner: body.repo.owner, repo: body.repo.name } } as any);
+        const matches = (search.matches || []).filter((match: any) => match.metadata?.owner === body.repo?.owner && match.metadata?.repo === body.repo?.name);
+        if (matches.length) {
+          userContent += "\n\nRelevant repository context from semantic search:\n" + matches.map((match: any) => `FILE: ${match.metadata.path}\n${match.metadata.text}`).join("\n\n").slice(0, 30000);
+        }
       }
     } catch {
       // RAG is an optional enhancement; the normal AI request remains available.
